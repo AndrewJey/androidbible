@@ -1,63 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest package="yuku.alkitab.debug"
-	xmlns:android="http://schemas.android.com/apk/res/android"
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
 	xmlns:tools="http://schemas.android.com/tools"
 	android:installLocation="auto">
 
 	<uses-permission android:name="android.permission.INTERNET" />
-	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-	<uses-permission android:name="android.permission.WAKE_LOCK" />
-	<uses-permission android:name="android.permission.NFC" />
-	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-	<!-- sync permissions -->
-	<uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
-	<uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
-	<uses-permission android:name="android.permission.AUTHENTICATE_ACCOUNTS" />
+	<!-- Foreground service for Bible and song audio playback (yuku.alkitab.base.audio.AudioService) -->
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
-	<!-- gcm -->
-	<uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
-	<permission
-		android:name="${applicationId}.permission.C2D_MESSAGE"
-		android:protectionLevel="signature" />
-	<uses-permission android:name="${applicationId}.permission.C2D_MESSAGE" />
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-	<!-- from a separate app: devotion reminder -->
-	<uses-permission android:name="android.permission.VIBRATE" />
-	<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+	<!-- Keeping storage permissions for users who upgrade from an existing versions
+	and store their version files in the external storage -->
+	<uses-permission
+		android:name="android.permission.READ_EXTERNAL_STORAGE"
+		android:maxSdkVersion="32" />
+	<uses-permission
+		android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+		android:maxSdkVersion="32"
+		tools:ignore="ScopedStorage" />
 
 	<uses-feature
 		android:name="android.hardware.touchscreen"
-		android:required="false" />
-	<uses-feature
-		android:name="android.hardware.nfc"
 		android:required="false" />
 
 	<application
 		android:name="yuku.alkitab.base.App"
 		android:allowBackup="true"
 		android:fullBackupContent="true"
-		android:icon="@drawable/ic_launcher"
+		android:icon="@mipmap/ic_launcher"
 		android:label="@string/app_name"
 		android:networkSecurityConfig="@xml/network_security_config"
-		android:theme="@style/Theme.Alkitab"
-		tools:ignore="UnusedAttribute">
+		android:supportsRtl="true"
+		android:theme="@style/Theme.Alkitab">
+
+		<!--
+			Disable Firebase Messaging's auto-init at process startup. Without this,
+			firebase-messaging 23.1.0+ proactively requests POST_NOTIFICATIONS on
+			Android 13+ the first time the app launches, before the user has any
+			reason to grant it. We instead initialize FCM lazily once the user signs
+			into sync (see SyncLoginActivity), which is the only feature that uses
+			push messages.
+		-->
+		<meta-data
+			android:name="firebase_messaging_auto_init_enabled"
+			android:value="false" />
+
 		<activity
 			android:name="yuku.alkitab.base.IsiActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale">
+			android:theme="@style/Theme.Alkitab.Starting"
+			android:exported="true">
 			<intent-filter>
 				<action android:name="android.intent.action.MAIN" />
 
 				<category android:name="android.intent.category.LAUNCHER" />
 				<category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
-			</intent-filter>
-			<intent-filter>
-				<action android:name="android.nfc.action.NDEF_DISCOVERED" />
-
-				<category android:name="android.intent.category.DEFAULT" />
-
-				<data android:mimeType="application/vnd.yuku.alkitab.nfc.beam" />
 			</intent-filter>
 			<intent-filter>
 				<action android:name="yuku.alkitab.action.VIEW" />
@@ -67,26 +65,20 @@
 		</activity>
 		<activity
 			android:name="yuku.alkitab.base.ac.GotoActivity"
-			android:configChanges="locale|layoutDirection|fontScale"
-			android:windowSoftInputMode="adjustNothing" />
+			android:windowSoftInputMode="adjustResize" />
 		<activity
-			android:name="yuku.alkitab.base.ac.SettingsActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
+			android:name="yuku.alkitab.base.settings.SettingsActivity"
 			android:label="@string/pengaturan_alkitab" />
-		<activity
-			android:name="yuku.alkitab.base.ac.ColorSettingsActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale" />
+		<activity android:name="yuku.alkitab.base.ac.ColorSettingsActivity" />
 		<activity
 			android:name="yuku.alkitab.base.ac.MarkersActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/activity_title_markers" />
 		<activity
 			android:name="yuku.alkitab.base.ac.MarkerListActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:windowSoftInputMode="adjustResize|stateHidden" />
 		<activity
-			android:name="yuku.alkitab.base.ac.VersionsActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
+			android:name="yuku.alkitab.versionmanager.VersionsActivity"
+			android:exported="true"
 			android:label="@string/kelola_versi"
 			android:parentActivityName="yuku.alkitab.base.IsiActivity">
 			<meta-data
@@ -259,86 +251,55 @@
 		</activity>
 		<activity
 			android:name="yuku.alkitab.base.ac.SearchActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/search"
 			android:windowSoftInputMode="adjustResize" />
 		<activity
 			android:name="yuku.alkitab.base.ac.DevotionActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/menuDevotion">
 			<meta-data
 				android:name="android.support.PARENT_ACTIVITY"
 				android:value="yuku.alkitab.base.IsiActivity" />
 		</activity>
-		<activity
-			android:name="yuku.alkitab.base.ac.HelpActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale">
+		<activity android:name="yuku.alkitab.base.ac.HelpActivity">
 			<meta-data
 				android:name="android.support.PARENT_ACTIVITY"
 				android:value="yuku.alkitab.base.ac.AboutActivity" />
 		</activity>
 		<activity
 			android:name="yuku.alkitab.base.ac.AboutActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/menuBantuan">
 			<meta-data
 				android:name="android.support.PARENT_ACTIVITY"
 				android:value="yuku.alkitab.base.IsiActivity" />
 		</activity>
 		<activity
-			android:name="yuku.alkitab.base.ac.ShareActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale" />
-		<activity
 			android:name="yuku.alkitab.base.ac.FontManagerActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/fm_activity_title" />
 		<activity
-			android:name="yuku.alkitab.base.ac.SongListActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
-			android:label="@string/sn_songs_activity_title"
-			android:theme="@style/Theme.Alkitab.DialogWhenLarge"
-			android:windowSoftInputMode="adjustResize|stateHidden" />
-		<activity
-			android:name="yuku.alkitab.base.ac.SongViewActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
+			android:name="yuku.alkitab.songs.SongViewActivity"
 			android:label="@string/sn_songs_activity_title" />
 		<activity
 			android:name="yuku.alkitab.base.ac.SecretSettingsActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="Secret settings" />
 		<activity
 			android:name="yuku.alkitab.base.ac.SecretSyncDebugActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="Secret sync debug" />
-		<activity
-			android:name="yuku.alkitab.base.ac.ReadingPlanActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale" />
+		<activity android:name="yuku.alkitab.base.ac.ReadingPlanActivity" />
 		<activity
 			android:name="yuku.alkitab.base.ac.PatchTextActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:windowSoftInputMode="adjustResize" />
 		<activity
 			android:name="yuku.alkitab.base.sync.SyncSettingsActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/sync_status_activity_title" />
 		<activity
 			android:name="yuku.alkitab.base.sync.SyncLogActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/sync_log_activity_title" />
 		<activity
 			android:name="yuku.alkitab.base.sync.SyncLoginActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:label="@string/sync_login_activity_title" />
 		<activity
-			android:name="yuku.filechooser.FileChooserActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale" />
-		<activity
-			android:name="com.example.android.wizardpager.MainActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
-			android:theme="@style/AlkitabFeedback.Theme" />
-		<activity
 			android:name="yuku.alkitab.base.ac.VersesDialogActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
+			android:exported="true"
 			android:theme="@style/Theme.Alkitab.Transparent">
 			<intent-filter>
 				<action android:name="yuku.alkitab.action.SHOW_VERSES_DIALOG" />
@@ -347,8 +308,8 @@
 			</intent-filter>
 		</activity>
 		<activity
-			android:name="yuku.alkitab.base.ac.DailyVerseAppWidgetConfigurationActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
+			android:name="yuku.alkitab.base.appwidget.DailyVerseAppWidgetConfigurationActivity"
+			android:exported="true"
 			android:label="@string/dv_activity_title">
 			<intent-filter>
 				<action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
@@ -356,19 +317,29 @@
 		</activity>
 		<activity
 			android:name="yuku.alkitab.base.ac.SearchBookFilterActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
-			android:label="@string/select_books_to_search"
-			android:theme="@style/Theme.Alkitab.DialogWhenLarge" />
+			android:label="@string/select_books_to_search" />
 		<activity
 			android:name="yuku.alkitab.base.ac.NoteActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:icon="@drawable/ic_attr_note"
 			android:windowSoftInputMode="adjustResize" />
 		<activity
 			android:name="yuku.alkitab.base.ac.AlertDialogActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
 			android:excludeFromRecents="true"
 			android:theme="@style/Theme.PopupActivity" />
+
+		<activity
+			android:name="yuku.alkitab.datatransfer.ui.DataTransferActivity"
+			android:configChanges="orientation|keyboardHidden|screenSize|screenLayout"
+			android:label="@string/data_transfer_title" />
+
+		<activity
+			android:name="yuku.alkitab.ribka.RibkaReportActivity"
+			android:label="@string/ribka_title"
+			android:theme="@style/Ribka.Theme" />
+
+		<activity
+			android:name="com.example.android.wizardpager.AlkitabFeedbackActivity"
+			android:theme="@style/AlkitabFeedback.Theme" />
 
 		<service android:name="yuku.alkitab.base.sv.DownloadService" />
 
@@ -380,6 +351,7 @@
 
 		<receiver
 			android:name="yuku.alkitab.base.br.SecretSettingsReceiver"
+			android:exported="true"
 			tools:ignore="ExportedReceiver">
 			<intent-filter>
 				<action android:name="android.provider.Telephony.SECRET_CODE" />
@@ -390,21 +362,10 @@
 			</intent-filter>
 		</receiver>
 
-		<!-- Used for Google Play Store Campaign Measurement-->
-		<service android:name="com.google.android.gms.analytics.CampaignTrackingService" />
-
-		<receiver
-			android:name="com.google.android.gms.analytics.CampaignTrackingReceiver"
-			android:exported="true"
-			tools:ignore="ExportedReceiver">
-			<intent-filter>
-				<action android:name="com.android.vending.INSTALL_REFERRER" />
-			</intent-filter>
-		</receiver>
-
 		<receiver
 			android:name="yuku.alkitab.base.br.DailyVerseAppWidgetReceiver"
-			android:icon="@drawable/ic_launcher">
+			android:exported="true"
+			android:icon="@mipmap/ic_launcher">
 			<intent-filter>
 				<action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
 			</intent-filter>
@@ -413,6 +374,7 @@
 				android:name="android.appwidget.provider"
 				android:resource="@xml/daily_verse_app_widget_provider" />
 		</receiver>
+
 		<receiver android:name="yuku.alkitab.base.br.DailyVerseAppWidgetReceiver$ClickReceiver" />
 
 		<service
@@ -421,7 +383,7 @@
 			android:permission="android.permission.BIND_JOB_SERVICE" />
 
 		<service
-			android:name="yuku.alkitab.base.sv.DailyVerseAppWidgetService"
+			android:name="yuku.alkitab.base.appwidget.DailyVerseAppWidgetService"
 			android:permission="android.permission.BIND_REMOTEVIEWS" />
 
 		<uses-library
@@ -439,43 +401,23 @@
 			android:name="yuku.alkitab.base.sv.VersionConfigUpdaterService"
 			android:exported="false" />
 
-		<!-- sync components -->
-		<service android:name="yuku.alkitab.base.sync.AuthenticatorService">
-			<intent-filter>
-				<action android:name="android.accounts.AccountAuthenticator" />
-			</intent-filter>
-			<meta-data
-				android:name="android.accounts.AccountAuthenticator"
-				android:resource="@xml/authenticator" />
-		</service>
-
-		<provider
-			android:name="yuku.alkitab.base.sync.StubProvider"
-			android:authorities="@string/sync_provider_authority"
-			android:exported="false"
-			android:syncable="true" />
-
+		<!-- Shared Bible and song audio: media3 MediaSessionService. exported=true is required so
+			 the OS (notification, lock-screen, Bluetooth, Android Auto) can bind. -->
 		<service
-			android:name="yuku.alkitab.base.sync.SyncService"
-			android:exported="true">
-			<!--
-			This service is not run in a separate process, because the singleton Preferences might not work well when accessed by multiple processes.
-			Moreover, local broadcast manager is in-process only (for example, the sync service asks the app UI to update something using LBM, it won't work.
-			 -->
+			android:name="yuku.alkitab.base.audio.AudioService"
+			android:exported="true"
+			android:foregroundServiceType="mediaPlayback">
 			<intent-filter>
-				<action android:name="android.content.SyncAdapter" />
+				<action android:name="androidx.media3.session.MediaSessionService" />
 			</intent-filter>
-			<meta-data
-				android:name="android.content.SyncAdapter"
-				android:resource="@xml/syncadapter" />
 		</service>
 
 		<!--
 			File provider, for sharing app files.
 			Authority MUST NOT be changed without changing sharing code.
-		 -->
+        -->
 		<provider
-			android:name="android.support.v4.content.FileProvider"
+			android:name="androidx.core.content.FileProvider"
 			android:authorities="${applicationId}.file_provider"
 			android:exported="false"
 			android:grantUriPermissions="true">
@@ -484,53 +426,29 @@
 				android:resource="@xml/file_provider" />
 		</provider>
 
-		<!-- gcm -->
-		<receiver
-			android:name="yuku.alkitab.base.sync.GcmBroadcastReceiver"
-			android:permission="com.google.android.c2dm.permission.SEND">
+		<!-- fcm -->
+		<service
+			android:name="yuku.alkitab.base.sync.FcmMessagingService"
+			android:exported="false">
 			<intent-filter>
-				<action android:name="com.google.android.c2dm.intent.RECEIVE" />
-				<category android:name="${applicationId}" />
+				<action android:name="com.google.firebase.MESSAGING_EVENT" />
 			</intent-filter>
-		</receiver>
+		</service>
 
 		<service
-			android:name="yuku.alkitab.base.sync.GcmIntentService"
+			android:name="yuku.alkitab.base.sync.FcmIntentService"
 			android:exported="true"
 			android:permission="android.permission.BIND_JOB_SERVICE" />
 
-		<meta-data
-			android:name="com.google.android.gms.version"
-			android:value="@integer/google_play_services_version" />
-
-		<!-- devotion reminder -->
-		<activity
-			android:name="yuku.alkitab.reminder.ac.DevotionReminderActivity"
-			android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection|fontScale"
-			android:label="@string/dr_app_name" />
-
-		<receiver android:name="yuku.alkitab.reminder.br.DevotionReminderReceiver" />
-		<receiver android:name="yuku.alkitab.reminder.br.BootCompleteReceiver">
-			<intent-filter>
-				<action android:name="android.intent.action.BOOT_COMPLETED" />
-			</intent-filter>
-		</receiver>
-
-		<!-- remove extensions cache when other apps are installed/updated/removed -->
-		<receiver android:name="yuku.alkitab.base.util.ExtensionManager$InvalidateExtensionsReceiver">
-			<intent-filter>
-				<action android:name="android.intent.action.PACKAGE_ADDED" />
-				<action android:name="android.intent.action.PACKAGE_CHANGED" />
-				<action android:name="android.intent.action.PACKAGE_REPLACED" />
-				<action android:name="android.intent.action.PACKAGE_REMOVED" />
-
-				<data android:scheme="package" />
-			</intent-filter>
-		</receiver>
-
-		<meta-data
-			android:name="io.fabric.ApiKey"
-			android:value="88fa9dcee81c62d7913a3fd0abd7cb6a652698dc" />
 	</application>
+
+	<queries>
+		<package android:name="org.sabda.kamus" />
+		<package android:name="org.sabda.pedia" />
+		<package android:name="org.sabda.tafsiran" />
+		<package android:name="org.sabda.gpt" />
+		<package android:name="yuku.esvsbasal" />
+		<package android:name="palki.maps" />
+	</queries>
 
 </manifest>

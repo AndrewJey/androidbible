@@ -3,7 +3,6 @@
 	android:layout_width="wrap_content"
 	android:layout_height="wrap_content"
 	android:gravity="center_horizontal"
-	android:minHeight="400dp"
 	android:orientation="vertical">
 
 	<TextView
@@ -21,10 +20,9 @@
 		android:layout_height="1dp"
 		android:background="?android:listDivider" />
 
-	<yuku.alkitab.base.widget.VersesView
-		android:id="@+id/versesView"
+	<yuku.alkitab.base.verses.EmptyableRecyclerView
+		android:id="@+id/lsView"
 		android:layout_width="match_parent"
-		android:layout_height="match_parent"
-		android:layout_weight="1" />
+		android:layout_height="wrap_content" />
 
 </LinearLayout>

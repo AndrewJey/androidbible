@@ -1,0 +1,2 @@
+# Internal assets have byte offsets into generated files. Keep their exact bytes.
+Alkitab/src/**/assets/internal/** -text

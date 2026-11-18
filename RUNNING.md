@@ -1,69 +1,27 @@
+# Compilar y probar este fork
 
+Este repositorio personal integra `develop` de [yukuku/androidbible](https://github.com/yukuku/androidbible). Se conservan la licencia original y las correcciones Python previas de los procesadores de publicaciones.
 
-<!-- local-development:start -->
-# Desarrollo local
+## Android Studio y Windows
 
-Puedes abrir este repositorio en VS Code, Antigravity o Sublime Text. El compilador y los servicios necesarios dependen del componente indicado abajo.
-
-## Python
-
-Crea un entorno por aplicación desde PyCharm o la CLI. Python 3.12 es el punto inicial de compatibilidad; no se presume que todo el código o sus paquetes antiguos ya lo soporten.
+Abre la raíz como proyecto Gradle. Usa JDK 21 para Gradle y configura `ANDROID_HOME` o un `local.properties` local con `sdk.dir`. Consulta los SDK y NDK requeridos en [gradle/libs.versions.toml](gradle/libs.versions.toml), y el wrapper para Gradle. Snappy requiere el NDK incluso en la variante abierta.
 
 ```powershell
-py -3.12 -m venv .venv
+.\gradlew.bat assemblePlainDebug
+.\gradlew.bat testPlainDebugUnitTest
+.\gradlew.bat lintPlainDebug
 ```
 
-No se detectó un archivo requirements. Hay que identificar los imports y declarar las dependencias antes de instalarlas.
+Selecciona `plainDebug` en Android Studio. Las APK se generan en `Alkitab/build/outputs/apk/plain/debug/`. Se pueden instalar desde Android Studio o mediante `adb install -r <apk>` en un dispositivo de prueba compatible.
 
-## Android / Gradle
+La variante `plain` utiliza contenido bíblico y configuración Firebase de ejemplo. Permite desarrollar la aplicación sin acceso al repositorio propietario; las funciones que necesitan servicios externos requieren su configuración real. No equivale a una edición de producción con todos sus datos y servicios. No agregues archivos de credenciales, claves ni el overlay propietario al fork.
 
-Importa en Android Studio la carpeta que contiene `settings.gradle`. Hay que revisar juntos el wrapper, Android Gradle Plugin, JDK y SDK antes de sincronizar. Guarda la ruta del SDK en `local.properties`, ignorado por Git, y configura localmente las claves Maps/Firebase. Esta revisión no acredita todavía un APK válido.
+Las instrucciones completas del original están en [docs/build-environment.md](docs/build-environment.md), [docs/build-system.md](docs/build-system.md) y [AGENTS.md](AGENTS.md). La compilación local usa el wrapper, sin sustituir las versiones fijadas por una instalación global.
 
-## PHP
+## Actualizaciones futuras
 
-Usa un runtime PHP aislado compatible con la aplicación. Ejecuta Composer únicamente en la carpeta con `composer.json`; las aplicaciones Laravel antiguas requieren revisar también PHP y dependencias. Configura las credenciales de base de datos localmente.
+`origin` corresponde al fork personal y `upstream` al original. El push a `upstream` está deshabilitado localmente. Integra `upstream/develop` en una rama de trabajo y valida `plainDebug` antes de actualizar la rama personal. Los procesadores de `publication/` son herramientas independientes; compilación Android no significa que todos sus formatos o proveedores se hayan probado.
 
-## Componentes y validación
+## Datos internos y pruebas en Windows
 
-Inventario y compilaciones locales del 2026-11-15. Una compilación correcta no acredita todavía interacción, compatibilidad de base de datos, instalador ni despliegue.
-
-| Componente | Tipo / destino | Validación |
-| --- | --- | --- |
-| [ATree/build.gradle](<ATree/build.gradle>) | gradle | Sin ejecutar |
-| [Afw/build.gradle](<Afw/build.gradle>) | gradle | Sin ejecutar |
-| [Alkitab/build.gradle](<Alkitab/build.gradle>) | gradle | Sin ejecutar |
-| [AlkitabFeedback/build.gradle](<AlkitabFeedback/build.gradle>) | gradle | Sin ejecutar |
-| [AlkitabIntegration/build.gradle](<AlkitabIntegration/build.gradle>) | gradle | Sin ejecutar |
-| [AlkitabIo/build.gradle](<AlkitabIo/build.gradle>) | gradle | Sin ejecutar |
-| [AlkitabModel/build.gradle](<AlkitabModel/build.gradle>) | gradle | Sin ejecutar |
-| [AlkitabYes2/build.gradle](<AlkitabYes2/build.gradle>) | gradle | Sin ejecutar |
-| [AmbilWarna/build.gradle](<AmbilWarna/build.gradle>) | gradle | Sin ejecutar |
-| [BiblePlus/build.gradle](<BiblePlus/build.gradle>) | gradle | Sin ejecutar |
-| [BintexReader/build.gradle](<BintexReader/build.gradle>) | gradle | Sin ejecutar |
-| [BintexWriter/build.gradle](<BintexWriter/build.gradle>) | gradle | Sin ejecutar |
-| [DragSortListView/build.gradle](<DragSortListView/build.gradle>) | gradle | Sin ejecutar |
-| [FlowLayout/build.gradle](<FlowLayout/build.gradle>) | gradle | Sin ejecutar |
-| [ImportedDesktopVerseUtil/build.gradle](<ImportedDesktopVerseUtil/build.gradle>) | gradle | Sin ejecutar |
-| [KpriModel/build.gradle](<KpriModel/build.gradle>) | gradle | Sin ejecutar |
-| [Snappy/build.gradle](<Snappy/build.gradle>) | gradle | Sin ejecutar |
-| [build.gradle](<build.gradle>) | gradle | Sin ejecutar |
-| [extensions/example-imagesharer/app/build.gradle](<extensions/example-imagesharer/app/build.gradle>) | gradle | Sin ejecutar |
-| [extensions/example-imagesharer/build.gradle](<extensions/example-imagesharer/build.gradle>) | gradle | Sin ejecutar |
-| [extensions/example-imagesharer/settings.gradle](<extensions/example-imagesharer/settings.gradle>) | gradle | Sin ejecutar |
-| [settings.gradle](<settings.gradle>) | gradle | Sin ejecutar |
-
-## Archivos ignorados
-
-`.gitignore` excluye credenciales locales, estado del editor y salidas de las herramientas detectadas. No deja de versionar archivos que ya estaban en Git. Los manifiestos, archivos de bloqueo, recursos fuente y scripts de esquema forman parte del código.
-<!-- local-development:end -->
-
-<!-- source-findings:start -->
-## Hallazgos en los archivos fuente
-
-Hallazgos de inspección estática; deben revisarse aunque otro componente compile.
-
-| Hallazgo | Archivo |
-| --- | --- |
-| Error de sintaxis Python 3, línea 22 | `publication/prog/en-leb-processor/leb.py` |
-| Error de sintaxis Python 3, línea 17 | `publication/prog/zefania-xml/kj2000.py` |
-<!-- source-findings:end -->
+Los archivos de `Alkitab/src/plain/assets/internal/` contienen índices de bytes. `.gitattributes` conserva sus bytes originales, incluidos los archivos con extensión `.txt`; convertirlos a CRLF rompe la lectura de capítulos. No los reformatees con un editor. Las pruebas usan SQLite nativo para evitar conexiones simuladas inválidas del modo antiguo en Windows.

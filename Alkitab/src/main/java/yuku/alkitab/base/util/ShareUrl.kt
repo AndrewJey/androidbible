@@ -1,0 +1,144 @@
+package yuku.alkitab.base.util
+
+import androidx.activity.ComponentActivity
+import androidx.annotation.Keep
+import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.gson.JsonParseException
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
+import okhttp3.Call
+import okhttp3.FormBody
+import okhttp3.Request
+import okhttp3.Response
+import yuku.alkitab.base.App
+import yuku.alkitab.base.connection.Connections
+import yuku.alkitab.debug.BuildConfig
+import yuku.alkitab.debug.R
+import yuku.alkitab.model.Version
+import yuku.alkitab.util.Ari
+import yuku.alkitab.util.IntArrayList
+
+object ShareUrl {
+    fun make(
+        activity: ComponentActivity,
+        immediatelyCancel: Boolean,
+        verseText: String,
+        ari_bc: Int,
+        selectedVerses_1: IntArrayList,
+        reference: String,
+        version: Version,
+        preset_name: String?,
+        callback: Callback,
+    ) {
+        if (immediatelyCancel) { // user explicitly ask for not submitting url
+            callback.onUserCancel()
+            callback.onFinally()
+            return
+        }
+
+        val aris = (0 until selectedVerses_1.size())
+            .map { Ari.encodeWithBc(ari_bc, selectedVerses_1[it]) }
+            .joinToString(",")
+
+        val form = FormBody.Builder().apply {
+            add("verseText", verseText)
+            add("aris", aris)
+            add("verseReferences", reference)
+            preset_name?.let { add("preset_name", it) }
+            version.getLongName()?.let { add("versionLongName", it) }
+            version.getShortName()?.let { add("versionShortName", it) }
+        }.build()
+
+        val call = Connections.okHttp.newCall(
+            Request.Builder()
+                .url(BuildConfig.SERVER_HOST + "/v/create")
+                .post(form)
+                .build()
+        )
+
+        // when set to true, do not call any callback
+        val done = AtomicBoolean()
+
+        val dialog: AlertDialog = MaterialAlertDialogBuilder(activity)
+            .setMessage(R.string.share_url_getting)
+            .setNegativeButton(R.string.cancel) { d, _ ->
+                if (done.getAndSet(true)) return@setNegativeButton
+                callback.onUserCancel()
+                d.dismiss()
+                callback.onFinally()
+            }
+            .create()
+        val observer = object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                done.set(true)
+                call.cancel()
+                dialog.dismiss()
+                owner.lifecycle.removeObserver(this)
+            }
+        }
+        activity.lifecycle.addObserver(observer)
+        dialog.setOnDismissListener {
+            activity.lifecycle.removeObserver(observer)
+            call.cancel()
+            if (done.getAndSet(true)) return@setOnDismissListener
+            callback.onUserCancel()
+            callback.onFinally()
+        }
+        dialog.show()
+
+        call.enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (!done.getAndSet(true)) {
+                    onComplete { callback.onError(e) }
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    if (done.getAndSet(true)) return
+                    val body = response.body
+                    if (body == null) {
+                        onComplete { callback.onError(IOException("empty response body")) }
+                    } else {
+                        try {
+                            val obj = App.getDefaultGson().fromJson(body.charStream(), ShareUrlResponseJson::class.java)
+                            if (obj.success) {
+                                onComplete { callback.onSuccess(obj.share_url) }
+                            } else {
+                                onComplete { callback.onError(Exception(obj.message)) }
+                            }
+                        } catch (e: JsonParseException) {
+                            onComplete { callback.onError(e) }
+                        }
+                    }
+                }
+            }
+
+            fun onComplete(todo: Runnable) {
+                activity.runOnUiThread {
+                    dialog.dismiss()
+                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                    todo.run()
+                    callback.onFinally()
+                }
+            }
+        })
+    }
+
+    interface Callback {
+        fun onSuccess(shareUrl: String)
+        fun onUserCancel()
+        fun onError(e: Exception)
+        fun onFinally()
+    }
+
+    @Keep
+    data class ShareUrlResponseJson(
+        val success: Boolean,
+        val message: String,
+        val share_url: String,
+    )
+}

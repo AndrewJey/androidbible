@@ -1,21 +1,21 @@
 package yuku.alkitab.base.model;
 
-import yuku.alkitab.base.S;
-import yuku.alkitab.base.ac.VersionsActivity;
+import java.io.File;
+import java.lang.ref.SoftReference;
+import java.util.concurrent.ConcurrentHashMap;
+import yuku.alkitab.base.App;
 import yuku.alkitab.base.storage.YesReaderFactory;
 import yuku.alkitab.base.util.AppLog;
 import yuku.alkitab.io.BibleReader;
 import yuku.alkitab.model.Version;
-
-import java.io.File;
-import java.lang.ref.SoftReference;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Version that is defined in the database.
  * If the version is downloaded from a definition in the preset list, the {@link #preset_name} will be non-null.
  */
 public class MVersionDb extends MVersion {
+	static final String TAG = MVersionDb.class.getSimpleName();
+
 	public static final int DEFAULT_ORDERING_START = 100;
 
 	public String filename;
@@ -49,6 +49,11 @@ public class MVersionDb extends MVersion {
 		return "file/" + filename;
 	}
 
+	@Override
+	public String getPresetName() {
+		return preset_name;
+	}
+
 	/**
 	 * Return the preset_name of a version id, if possible. Null otherwise.
 	 */
@@ -74,7 +79,7 @@ public class MVersionDb extends MVersion {
 
 			final BibleReader reader = YesReaderFactory.createYesReader(filename);
 			if (reader == null) {
-				AppLog.e(VersionsActivity.TAG, "YesReaderFactory failed to open the yes file");
+				AppLog.e(TAG, "YesReaderFactory failed to open the yes file");
 				return null;
 			}
 
@@ -94,7 +99,7 @@ public class MVersionDb extends MVersion {
 
 	public void setActive(boolean active) {
 		this.cache_active = active;
-		S.getDb().setVersionActive(this, active);
+		App.services.storage.getDb().setVersionActive(this, active);
 	}
 
 	@Override

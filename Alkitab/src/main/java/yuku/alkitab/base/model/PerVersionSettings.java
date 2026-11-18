@@ -1,6 +1,9 @@
 package yuku.alkitab.base.model;
 
+import androidx.annotation.Keep;
+
 // must be gson-compatible
+@Keep
 public class PerVersionSettings {
 	public float fontSizeMultiplier;
 

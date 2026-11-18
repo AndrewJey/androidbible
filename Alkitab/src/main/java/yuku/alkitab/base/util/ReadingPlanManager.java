@@ -1,20 +1,18 @@
 package yuku.alkitab.base.util;
 
-import android.support.annotation.NonNull;
-import android.util.Log;
-import yuku.alkitab.base.S;
+import androidx.annotation.NonNull;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Date;
+import yuku.alkitab.base.App;
 import yuku.alkitab.base.model.ReadingPlan;
 import yuku.alkitab.util.IntArrayList;
 import yuku.bintex.BintexReader;
 import yuku.bintex.ValueMap;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Date;
-
 public class ReadingPlanManager {
-	public static final String TAG = ReadingPlanManager.class.getSimpleName();
+	static final String TAG = ReadingPlanManager.class.getSimpleName();
 
 	private static final byte[] RPB_HEADER = {0x52, (byte) 0x8a, 0x61, 0x34, 0x00, (byte) 0xe0, (byte) 0xea};
 
@@ -34,7 +32,7 @@ public class ReadingPlanManager {
 
 			info.startTime = new Date().getTime();
 
-			return S.getDb().insertReadingPlan(info, data);
+			return App.services.storage.getDb().insertReadingPlan(info, data);
 		} catch (IOException e) {
 			AppLog.e(TAG, "Error reading reading plan, should not happen", e);
 			return 0;
@@ -47,9 +45,9 @@ public class ReadingPlanManager {
 		final String gid = ReadingPlan.gidFromName(readingPlanName);
 
 		if (checked) {
-			S.getDb().insertOrUpdateReadingPlanProgress(gid, readingCode, System.currentTimeMillis());
+			App.services.storage.getDb().insertOrUpdateReadingPlanProgress(gid, readingCode, System.currentTimeMillis());
 		} else {
-			S.getDb().deleteReadingPlanProgress(gid, readingCode);
+			App.services.storage.getDb().deleteReadingPlanProgress(gid, readingCode);
 		}
 	}
 
@@ -68,7 +66,7 @@ public class ReadingPlanManager {
 			}
 		}
 
-		S.getDb().insertOrUpdateMultipleReadingPlanProgresses(gid, readingCodes, System.currentTimeMillis());
+		App.services.storage.getDb().insertOrUpdateMultipleReadingPlanProgresses(gid, readingCodes, System.currentTimeMillis());
 	}
 
 	@NonNull public static ReadingPlan readVersion1(InputStream inputStream, String name) {
@@ -102,13 +100,13 @@ public class ReadingPlanManager {
 					counter++;
 				}
 
+				if (reader.readUint8() != 0) {
+					throw new RuntimeException("No footer.");
+				}
+
 				readingPlan.dailyVerses = dailyVerses;
 			} finally {
 				reader.close();
-			}
-
-			if (reader.readUint8() != 0) {
-				throw new RuntimeException("No footer.");
 			}
 
 			return readingPlan;
@@ -157,6 +155,10 @@ public class ReadingPlanManager {
 		for (int i = 0; i < readingCodes.size(); i++) {
 			final int readingCode = readingCodes.get(i);
 			final int sequence = (readingCode & 0x000000ff);
+			if (sequence >= readMarks.length) {
+				AppLog.e(TAG, "Reading sequence out of bounds: " + sequence + " for day " + dayNumber);
+				continue;
+			}
 			readMarks[sequence] = true;
 		}
 	}

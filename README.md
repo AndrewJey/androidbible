@@ -1,48 +1,94 @@
 <!-- local-development:start -->
-## Desarrollo local
+## Desarrollo de este fork
 
-Consulta [RUNNING.md](RUNNING.md) para ubicar cada componente, abrirlo en su IDE, compilarlo y conocer las comprobaciones realizadas y los requisitos pendientes.
+Este repositorio personal integra el historial de [yukuku/androidbible, rama develop](https://github.com/yukuku/androidbible). Consulta [RUNNING.md](RUNNING.md) para abrirlo en tu entorno, compilarlo o validar sus datos y conocer sus requisitos y límites. Se conservan la documentación, las licencias y las atribuciones del original.
 <!-- local-development:end -->
 
 Bible for Android
 =================
 
-**100% Free, Open-Source, Quick and Friendly Bible App.**
+**100% Free, Open-Source, Quick, and User-Friendly Bible App.**
 
-Get the apps on Google Play: <a href="https://play.google.com/store/apps/details?id=yuku.alkitab">Alkitab</a> (Indonesian version) or <a href="https://play.google.com/store/apps/details?id=yuku.alkitab.kjv">Quick Bible</a> (non-Indonesian version). You can also download them from the <a href="https://github.com/yukuku/androidbible/releases">Releases</a> page.
+No ads, no distractions when you just want to start reading the Bible.
 
-- <a href="http://www.bibleforandroid.com">Official Website</a>
-- <a href="http://www.bibleforandroid.com/changelog">Changelog and Beta Testers</a> and <a href="http://blog.bibleforandroid.com">Development Blog</a>
-- <a href="http://groups.google.com/group/bibleforandroid">Discussion Group</a>
+Get the apps on Google Play: [Alkitab](https://play.google.com/store/apps/details?id=yuku.alkitab) (Indonesian version) or [Quick Bible](https://play.google.com/store/apps/details?id=yuku.alkitab.kjv) (non-Indonesian version).
 
-Alkitab is the Indonesian word for the Bible.
+- [Official Website](https://alkitab.app)
+- [Developer Page](https://alkitab.app/developer) for creating your own Bible versions, song books, and reading plans.
+- [Changelog](CHANGELOG.md)
+- [Discussion Group](https://groups.google.com/group/bibleforandroid)
+- [Blog](https://blog.alkitab.app)
+
+**Alkitab** is the Indonesian word for the Bible.
+
+Building
+--------
+
+Requirements: JDK 21 and the Android SDK, including the NDK, because the `Snappy` module contains native C++. The compile SDK, minimum SDK, and NDK versions are pinned in `gradle/libs.versions.toml`.
+
+The main app module is `:Alkitab`. For local development, use the `plain` flavor, which works out of the box: placeholder Bible data ships in `Alkitab/src/plain/assets/internal`, and a placeholder `Alkitab/google-services.json` is checked in (Firebase features will not actually function with it, but the build and the rest of the app do).
+
+Build a debug APK:
+
+    ./gradlew assemblePlainDebug
+
+Build a debug App Bundle:
+
+    ./gradlew bundlePlainDebug
+
+Run the unit tests used in CI:
+
+    ./gradlew testPlainDebugUnitTest testPlainReleaseUnitTest
+
+The four product flavors are `plain`, plus `yuku_alkitab`, `yuku_quick_bible`, and `sabda_alkitab` (the published apps). The production flavors need the Bible text not included in this repo and signing keys described under [Release builds](#release-builds) below.
+
+Contributing
+------------
+
+`develop` is the integration branch. Base your work on `develop` and target your pull request at `develop`, never at `master`.
+
+Every pull request against `develop` runs the unit tests and a `plainDebug` build. Pull requests from branches within this repository also receive signed release APKs for all production flavors, which are uploaded to a preview URL and linked in a comment on the pull request. Pull requests from forks skip that job because it requires secrets that forks cannot read.
+
+See the [documentation index](docs/README.md) for architecture, feature guides, and tooling.
 
 Bible translations/versions
 ---------------------------
 
-This app natively uses *.yes* files for the Bible text. You can create a *.yes* file easily by preparing a plain text file. See <a href="http://www.bibleforandroid.com/developer">this page for</a> instructions.
+This app natively uses *.yes* files for the Bible text. You can create a *.yes* file by preparing a plain text file (a *.yet* file). See the [YET authoring guide](docs/developer/yet.md) for instructions and [docs/binary-formats.md](docs/binary-formats.md) for the binary format specifications.
 
-You can also convert PalmBible+ PDB files using the built-in converter in the app for your own use. 
+To add a version to the app, open it from the Versions screen. The app accepts *.yes* files directly, and converts PalmBible+ *.pdb* files to *.yes* with its built-in converter. Gzipped files (*.yes.gz*, *.pdb.gz*) are decompressed transparently.
 
-Tools for converting PalmBible+ PDB files to *.yet* files, and from *.yet* files to *.yes* files and internal app files, are available at https://goo.gl/3wo5zv.
+For converting in bulk or from another Bible format, see [docs/tools.md](docs/tools.md), which covers the desktop converters in `tools/` and where to get the prebuilt jars.
 
 Customizing and Integrating
 ---------------------------
 
-Bible for Android is not only open-source, but also designed in a flexible manner. You can:
+The Bible for Android is not only open-source but also designed to be flexible. You can:
 
 - Create and distribute your own Bible translation
 - Create and make publicly available your favorite Song Book
 - Create and publish a Reading Plan
 - Open specific verses from your app
-- Make your own app that gives further insight regarding specific verses callable by Alkitab / Quick Bible
 
-See the <a href="http://www.bibleforandroid.com/developer">Developer page</a> for more information.
+See the [content and integration guides](docs/developer/README.md) for authoring formats and opening verses.
+
+Developer Documentation
+-----------------------
+
+The [documentation index](docs/README.md) links the architecture, infrastructure,
+feature guides, contracts, and historical design records.
+
+Release builds
+--------------
+
+The [Releases](https://github.com/yukuku/androidbible/releases) page holds pre-release APKs built automatically from every push to `develop`. They are signed with the production key and installable, but they are development builds, not the stable versions on Google Play.
+
+See [Build System](docs/build-system.md) for version stages, production overlays, Firebase configuration, signing keys, and release artifacts.
 
 License
 --------
 
-    Copyright 2009-2018 (or the current year) The Alkitab Authors.
+    Copyright 2009-present The Alkitab App Authors.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.

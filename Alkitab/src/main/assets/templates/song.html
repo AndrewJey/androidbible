@@ -10,10 +10,20 @@
 				color: {{$text_color}};
 				font-size: {{$text_size}};
 				font-family: {{$text_font}};
+				font-weight: {{$text_weight}};
 			}
 			
 			.verse_ordering {
 				color: {{$verse_number_color}};
+				font-weight: {{$verse_number_weight}};
+			}
+
+			.song > :not(.code):not(.break):not(#test_tobehidden):not(:last-child) {
+				padding-bottom: clamp(0rem, calc({{$line_spacing_mult}}rem - 1rem), 0.3rem);
+			}
+
+			.song > .musical {
+				display: block;
 			}
 		</style>
 
@@ -36,29 +46,17 @@
 	<body onload="body_load()" style="padding: 16px 8px">
 		<div class='song'>
 			{{div:code}}
-			{{div:title}}
-			{{div:title_original}}
-			<div style='padding-bottom: 8px'></div>
-			{{div:tune}}
-			<div class='break'></div>
-			{{div:authors_lyric}}
-			{{div:authors_music}}
-			<div class='break'></div>
-			<div class='scriptureReferences'>{{$scripture_references}}</div>
-			{{div:keySignature}}
-			{{div:timeSignature}}
-			<div class='break'></div>
-			
+
 			<div class='verse' id="test_tobehidden">
 				<p class='line' id="test_line">Test1#fg</p>
 			</div>
-			
-			{{div:lyrics}}
+
+			{{$song_content}}
 
             <div>
                 <span class="copyright">{{$copyright}}</span>
                 <div style='padding-bottom: 8px'></div>
-                <span class="patchtext"><a href="patchtext:">{{$patch_text_open_link}}</a></span>
+                {{div:patchtext}}
             </div>
 		</div>
 	</body>

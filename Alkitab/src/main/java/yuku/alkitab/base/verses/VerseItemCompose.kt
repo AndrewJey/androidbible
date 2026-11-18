@@ -1,0 +1,1117 @@
+package yuku.alkitab.base.verses
+
+import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.Context
+import android.util.AttributeSet
+import android.view.DragEvent
+import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
+import androidx.core.graphics.ColorUtils
+import androidx.core.net.toUri
+import kotlinx.coroutines.withTimeoutOrNull
+import yuku.afw.storage.Preferences
+import yuku.alkitab.base.App
+import yuku.alkitab.base.compose.composeFontFamilyFor
+import yuku.alkitab.base.settings.ExperimentalFlags
+import yuku.alkitab.base.util.AppLog
+import yuku.alkitab.base.util.ClipboardUtil
+import yuku.alkitab.base.util.TextColorUtil
+import yuku.alkitab.base.util.safeQuery
+import yuku.alkitab.base.widget.AttributeView
+import yuku.alkitab.base.widget.DictionaryLinkInfo
+import yuku.alkitab.base.widget.LeftDrawer.PROGRESS_MARK_DRAG_MIME_TYPE
+import yuku.alkitab.base.widget.VerseInlineLinkSpan
+import yuku.alkitab.base.widget.VerseRendererCompose
+import yuku.alkitab.debug.R
+import yuku.alkitab.model.SingleChapterVerses
+import yuku.alkitab.model.Version
+import yuku.alkitab.util.Ari
+
+/** Row inputs; selection, collapse and overlays are supplied separately. */
+data class VerseItemComposeState(
+    val render: VerseRendererCompose.Result,
+    val fontSizeDp: Float,
+    /** Verse-number gutter text size in DIP (0.7 × main size). */
+    val verseNumberFontSizeDp: Float,
+    val fontColor: Int,
+    val verseNumberColor: Int,
+    val lineSpacingMult: Float,
+    val typeface: android.graphics.Typeface?,
+    val fontBold: Int,
+    val attribute: AttributeState,
+    val onClick: () -> Unit,
+    val onInlineLinkClick: (VerseInlineLinkSpan.Type, Int) -> Unit,
+    val onPinDropped: (presetId: Int) -> Unit,
+)
+
+data class AttributeState(
+    val bookmarkCount: Int,
+    val noteCount: Int,
+    val progressMarkBits: Int,
+    val hasMaps: Boolean,
+    val scale: Float,
+    val version: Version?,
+    val versionId: String?,
+    val ari: Int,
+    val attributeListener: VersesController.AttributeListener,
+    /**
+     * Captions for set progress-mark bits, resolved once at bind time so the
+     * accessibility path — which TalkBack can hit repeatedly per row — doesn't
+     * run a DB query on every read. Length equals
+     * [AttributeView.PROGRESS_MARK_TOTAL_COUNT]; entry is `null` when the
+     * matching bit is unset (or no row exists).
+     */
+    val progressMarkCaptions: List<String?>,
+)
+
+private const val TAG = "VerseItemCompose"
+
+internal const val ATTENTION_DURATION_MS = 2000L
+private const val AUDIO_HIGHLIGHT_FLASH_ALPHA = 0.60f
+private const val AUDIO_HIGHLIGHT_STEADY_ALPHA = 0.20f
+private const val AUDIO_HIGHLIGHT_FLASH_MS = 500
+
+/**
+ * Compose-backed verse row. Exposes a small mutable surface
+ * (`checked`, `collapsed`, `audioHighlightColor`, `callAttention()`) so the
+ * RecyclerView controller can update the row state without rebinding, and
+ * handles drag-drop at the View level (it's simpler than translating
+ * `DragEvent` into a Compose drag target).
+ */
+class VerseItemComposeView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+) : AbstractComposeView(context, attrs) {
+
+    private var state by mutableStateOf<VerseItemComposeState?>(null)
+
+    private val checkedState = mutableStateOf(false)
+    var checked: Boolean
+        get() = checkedState.value
+        set(value) { checkedState.value = value }
+
+    private val collapsedState = mutableStateOf(false)
+    var collapsed: Boolean
+        get() = collapsedState.value
+        set(value) { collapsedState.value = value }
+
+    private val audioHighlightColorState = mutableIntStateOf(0)
+    /** Setting a non-zero color triggers the overlay fade in. */
+    var audioHighlightColor: Int
+        get() = audioHighlightColorState.intValue
+        set(value) { audioHighlightColorState.intValue = value }
+
+    private val attentionStartState = mutableLongStateOf(0L)
+    /** `startTime` is wall-clock millis; pass `0` to clear the flash. */
+    fun callAttention(startTime: Long) {
+        attentionStartState.longValue = startTime
+    }
+
+    private val dragHoverState = mutableStateOf(false)
+    private var onPinDroppedHandler: (presetId: Int) -> Unit = {}
+
+    fun bind(newState: VerseItemComposeState) {
+        this.state = newState
+        this.onPinDroppedHandler = newState.onPinDropped
+    }
+
+    @Composable
+    override fun Content() {
+        val s = state ?: return
+        VerseItemComposeContent(
+            state = s,
+            checked = checkedState.value,
+            collapsed = collapsedState.value,
+            audioHighlightColor = audioHighlightColorState.intValue,
+            attentionStart = attentionStartState.longValue,
+            dragHover = dragHoverState.value,
+            onAttentionDone = { attentionStartState.longValue = 0L },
+        )
+    }
+
+    override fun onDragEvent(event: DragEvent): Boolean = when (event.action) {
+        DragEvent.ACTION_DRAG_STARTED -> {
+            val desc: ClipDescription? = event.clipDescription
+            desc != null && desc.hasMimeType(PROGRESS_MARK_DRAG_MIME_TYPE)
+        }
+        DragEvent.ACTION_DRAG_ENTERED -> {
+            dragHoverState.value = true
+            true
+        }
+        DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> {
+            dragHoverState.value = false
+            true
+        }
+        DragEvent.ACTION_DROP -> {
+            val presetId = progressMarkPresetId(event.clipData)
+            if (presetId == null) {
+                false
+            } else {
+                onPinDroppedHandler(presetId)
+                true
+            }
+        }
+        else -> false
+    }
+
+    /**
+     * Make TalkBack read [getContentDescription] instead of descending into
+     * the Compose subtree (which would announce nothing useful).
+     */
+    override fun dispatchPopulateAccessibilityEvent(event: AccessibilityEvent): Boolean {
+        event.text.add(contentDescription)
+        return true
+    }
+
+    @SuppressLint("GetContentDescriptionOverride")
+    override fun getContentDescription(): CharSequence {
+        val s = state ?: return ""
+        return verseItemContentDescription(context, s)
+    }
+}
+
+internal fun progressMarkPresetId(clipData: ClipData?): Int? {
+    if (clipData == null || clipData.itemCount == 0) return null
+    return clipData.getItemAt(0).text?.toString()?.toIntOrNull()
+        ?.takeIf { it in 0 until AttributeView.PROGRESS_MARK_TOTAL_COUNT }
+}
+
+/**
+ * TalkBack description of a verse row: gutter verse number (when present),
+ * verse text, then attribute summaries. Progress-mark captions come
+ * pre-resolved on [AttributeState.progressMarkCaptions] so this path stays
+ * free of DB I/O.
+ */
+@SuppressLint("StringFormatMatches")
+internal fun verseItemContentDescription(context: Context, s: VerseItemComposeState): CharSequence {
+    val res = StringBuilder()
+
+    val gutter = s.render.gutterVerseNumber
+    if (gutter != null) {
+        res.append(gutter).append(' ')
+    }
+    res.append(s.render.text.text)
+
+    val bookmarkCount = s.attribute.bookmarkCount
+    if (bookmarkCount == 1) {
+        res.append(' ').append(context.getString(R.string.desc_verse_attribute_one_bookmark))
+    } else if (bookmarkCount > 1) {
+        res.append(' ').append(context.getString(R.string.desc_verse_attribute_multiple_bookmarks, bookmarkCount))
+    }
+
+    val noteCount = s.attribute.noteCount
+    if (noteCount == 1) {
+        res.append(' ').append(context.getString(R.string.desc_verse_attribute_one_note))
+    } else if (noteCount > 1) {
+        res.append(' ').append(context.getString(R.string.desc_verse_attribute_multiple_notes, noteCount))
+    }
+
+    val progressMarkBits = s.attribute.progressMarkBits
+    for (presetId in 0 until AttributeView.PROGRESS_MARK_TOTAL_COUNT) {
+        if (progressMarkBits and (1 shl AttributeView.PROGRESS_MARK_BITS_START + presetId) != 0) {
+            s.attribute.progressMarkCaptions.getOrNull(presetId)?.let { caption ->
+                res.append(' ').append(context.getString(R.string.desc_verse_attribute_progress_mark, caption))
+            }
+        }
+    }
+
+    return res
+}
+
+/**
+ * Runs the rendered verse text through the dictionary app's analyzer content
+ * provider and wraps every recognized word in an underlined, tappable
+ * [LinkAnnotation] that opens the dictionary. The word keeps whatever color
+ * the surrounding text has.
+ *
+ * Returns [render] unchanged when the provider is unavailable, reports
+ * nothing, or the query fails.
+ */
+internal fun addDictionaryLinks(
+    context: Context,
+    render: VerseRendererCompose.Result,
+    dictionaryListener: (DictionaryLinkInfo) -> Unit,
+): VerseRendererCompose.Result {
+    // we have to exclude the verse numbers from analyze text
+    val startPos = render.startPosAfterVerseNumber
+    val analyzeString = render.text.text.substring(startPos)
+    if (analyzeString.isEmpty()) return render
+
+    val hits = mutableListOf<DictionaryLinkHit>()
+
+    val uri = "content://org.sabda.kamus.provider/analyze".toUri().buildUpon().appendQueryParameter("text", analyzeString).build()
+    try {
+        context.contentResolver.safeQuery(uri, null, null, null, null)?.use { c ->
+            val col_offset = c.getColumnIndexOrThrow("offset")
+            val col_len = c.getColumnIndexOrThrow("len")
+            val col_key = c.getColumnIndexOrThrow("key")
+
+            while (c.moveToNext()) {
+                val offset = c.getInt(col_offset)
+                val len = c.getInt(col_len)
+                val key = c.getString(col_key)
+
+                val word = analyzeString.substring(offset, offset + len)
+                hits += DictionaryLinkHit(startPos + offset, startPos + offset + len, DictionaryLinkInfo(word, key))
+            }
+        }
+    } catch (e: Exception) {
+        AppLog.e(TAG, "Error when querying dictionary content provider", e)
+        return render
+    }
+    if (hits.isEmpty()) return render
+
+    val decorated = buildAnnotatedString {
+        append(render.text)
+        for (hit in hits) {
+            addStyle(SpanStyle(textDecoration = TextDecoration.Underline), hit.start, hit.end)
+            addLink(LinkAnnotation.Clickable("dictionary") { dictionaryListener(hit.info) }, hit.start, hit.end)
+        }
+    }
+    return render.copy(text = decorated)
+}
+
+private class DictionaryLinkHit(val start: Int, val end: Int, val info: DictionaryLinkInfo)
+
+/** Whether the attribute column will draw at least one icon. */
+internal val AttributeState.isShowingSomething: Boolean
+    get() = bookmarkCount > 0 ||
+        noteCount > 0 ||
+        (progressMarkBits and AttributeView.PROGRESS_MARK_BIT_MASK) != 0 ||
+        hasMaps
+
+fun attributeViewScale(fontSizeDp: Float): Float = (fontSizeDp * 1.5f).coerceIn(16f, 48f) / 30f
+
+/**
+ * Builds the immutable per-row state consumed by [VerseItemComposeContent].
+ * Shared by the RecyclerView-hosted [VerseItemComposeView] rows and the fully
+ * Compose verse list, so both paths render identically.
+ *
+ * @param currentPosition resolves the row's position at interaction time
+ * (a RecyclerView rebind can move a row, so the position must not be captured
+ * eagerly); returns -1 when the row is no longer attached.
+ * @param inlineLinkViewProvider supplies the View handed to
+ * [VerseInlineLinkSpan.onClick] (the row view, or the hosting Compose view).
+ */
+fun buildVerseItemComposeState(
+    context: Context,
+    data: VersesDataModel,
+    ui: VersesUiModel,
+    listeners: VersesListeners,
+    index: Int,
+    checked: Boolean,
+    currentPosition: () -> Int,
+    toggleChecked: (position: Int) -> Unit,
+    inlineLinkViewProvider: () -> android.view.View,
+): VerseItemComposeState {
+    val verse_1 = index + 1
+    val ari = Ari.encodeWithBc(data.ari_bc_, verse_1)
+    val text = data.verses_.getVerse(index)
+    val verseNumberText = data.verses_.getVerseNumberText(index)
+    val highlightInfo = data.versesAttributes.highlightInfoMap_[index]
+
+    val renderResult = VerseRendererCompose.render(
+        isVerseNumberShown = ui.isVerseNumberShown,
+        ari = ari,
+        text = text,
+        verseNumberText = verseNumberText,
+        highlightInfo = highlightInfo,
+        checked = checked,
+    )
+
+    val textSizeMult = if (data.verses_ is SingleChapterVerses.WithTextSizeMult) {
+        data.verses_.getTextSizeMult(index)
+    } else {
+        ui.textSizeMult
+    }
+
+    val applied = App.services.uiDimensions.applied()
+    val fontSizeDp = applied.fontSize2dp * textSizeMult
+    val verseNumberFontSizeDp = applied.fontSize2dp * 0.7f * textSizeMult
+    val attributeScale = attributeViewScale(fontSizeDp)
+
+    val render = if (ari in ui.dictionaryModeAris ||
+        checked && Preferences.getBoolean(context.getString(R.string.pref_autoDictionaryAnalyze_key), context.resources.getBoolean(R.bool.pref_autoDictionaryAnalyze_default))
+    ) {
+        addDictionaryLinks(context, renderResult, listeners.dictionaryListener_)
+    } else {
+        renderResult
+    }
+
+    // Pre-resolve progress-mark captions so the accessibility path, which
+    // TalkBack can hit repeatedly per row, doesn't run a DB query per read.
+    val progressMarkBits = data.versesAttributes.progressMarkBitsMap_[index]
+    val progressMarkCaptions: List<String?> = (0 until AttributeView.PROGRESS_MARK_TOTAL_COUNT).map { presetId ->
+        if (progressMarkBits and (1 shl (AttributeView.PROGRESS_MARK_BITS_START + presetId)) == 0) {
+            null
+        } else {
+            App.services.storage.db.getProgressMarkByPresetId(presetId)?.let { progressMark ->
+                if (progressMark.caption.isNullOrEmpty()) {
+                    context.getString(AttributeView.getDefaultProgressMarkStringResource(presetId))
+                } else {
+                    progressMark.caption
+                }
+            }
+        }
+    }
+
+    return VerseItemComposeState(
+        render = render,
+        fontSizeDp = fontSizeDp,
+        verseNumberFontSizeDp = verseNumberFontSizeDp,
+        fontColor = applied.fontColor,
+        verseNumberColor = applied.verseNumberColor,
+        lineSpacingMult = applied.lineSpacingMult,
+        typeface = applied.fontFace,
+        fontBold = applied.fontBold,
+        attribute = AttributeState(
+            bookmarkCount = data.versesAttributes.bookmarkCountMap_[index],
+            noteCount = data.versesAttributes.noteCountMap_[index],
+            progressMarkBits = progressMarkBits,
+            hasMaps = data.versesAttributes.hasMapsMap_[index],
+            scale = attributeScale,
+            version = data.version_,
+            versionId = data.versionId_,
+            ari = ari,
+            attributeListener = listeners.attributeListener,
+            progressMarkCaptions = progressMarkCaptions,
+        ),
+        onClick = {
+            when (ui.verseSelectionMode) {
+                VersesController.VerseSelectionMode.none -> Unit
+                VersesController.VerseSelectionMode.singleClick -> {
+                    val position = currentPosition()
+                    if (position != -1) {
+                        listeners.selectedVersesListener.onVerseSingleClick(data.getVerse_1FromPosition(position))
+                    }
+                }
+                VersesController.VerseSelectionMode.multiple -> {
+                    val position = currentPosition()
+                    if (position != -1) {
+                        toggleChecked(position)
+                    }
+                }
+            }
+        },
+        onInlineLinkClick = { type, arif ->
+            listeners.inlineLinkSpanFactory_.create(type, arif).onClick(inlineLinkViewProvider())
+        },
+        onPinDropped = { presetId ->
+            val position = currentPosition()
+            if (position != -1) {
+                listeners.pinDropListener.onPinDropped(presetId, Ari.encodeWithBc(data.ari_bc_, data.getVerse_1FromPosition(position)))
+            }
+        },
+    )
+}
+
+/** How long a finger must rest on a verse before its ruby geometry is copied. */
+private const val RUBY_GEOMETRY_HOLD_MS = 1000L
+
+/**
+ * While the ruby geometry debug setting is on, resting a finger on a verse for
+ * [RUBY_GEOMETRY_HOLD_MS] puts the dump of what its readings were placed from
+ * on the clipboard. Events are watched on the initial pass and never consumed,
+ * so selecting, scrolling and long-pressing all still see them, and the hold is
+ * timed rather than waiting for a gesture no one else has claimed.
+ */
+@Composable
+private fun rubyGeometryCopyOnHold(ari: Int): Modifier {
+    if (LocalInspectionMode.current || !ExperimentalFlags.debugRubyGeometry()) return Modifier
+    val context = LocalContext.current
+    return Modifier.pointerInput(ari) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val lifted = withTimeoutOrNull(RUBY_GEOMETRY_HOLD_MS) {
+                    var up = false
+                    while (!up) {
+                        up = awaitPointerEvent(PointerEventPass.Initial).changes.none { it.pressed }
+                    }
+                    true
+                }
+                if (lifted == null) copyRubyGeometry(context, ari)
+            }
+        }
+    }
+}
+
+private fun copyRubyGeometry(context: Context, ari: Int) {
+    val dump = rubyGeometryDumpFor(ari)
+    if (dump == null) {
+        Toast.makeText(context, "No ruby geometry recorded for this verse yet", Toast.LENGTH_SHORT).show()
+    } else {
+        ClipboardUtil.copyToClipboard(dump)
+        Toast.makeText(context, "Ruby geometry copied, " + dump.trim().lines().size + " lines", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+internal fun VerseItemComposeContent(
+    state: VerseItemComposeState,
+    checked: Boolean,
+    collapsed: Boolean,
+    audioHighlightColor: Int,
+    attentionStart: Long,
+    dragHover: Boolean,
+    onAttentionDone: () -> Unit,
+) {
+    // Strip fontScale from the density so sp values render at dp dimensions
+    // — verse text uses dp sizing (not sp), so system font-scale must not
+    // multiply on top.
+    val baseDensity = LocalDensity.current
+    val unscaledDensity = remember(baseDensity.density) {
+        Density(density = baseDensity.density, fontScale = 1f)
+    }
+
+    CompositionLocalProvider(LocalDensity provides unscaledDensity) {
+        val lineMetrics = rememberLineMetrics(state)
+
+        val sizeModifier = if (collapsed) {
+            Modifier.fillMaxWidth().height(0.dp)
+        } else {
+            Modifier.fillMaxWidth().wrapContentHeight()
+        }
+
+        Box(
+            modifier = sizeModifier
+                .checkedOverlay(checked)
+                .audioHighlightOverlay(audioHighlightColor)
+                .attentionOverlay(attentionStart, onAttentionDone)
+                .dragHoverOverlay(dragHover)
+                .pointerInput(state.onClick) {
+                    detectTapGestures(onTap = { state.onClick() })
+                }
+                .then(rubyGeometryCopyOnHold(state.attribute.ari))
+        ) {
+            if (!state.attribute.isShowingSomething) {
+                VerseTextRegion(state, checked, lineMetrics, attributeSize = IntSize.Zero, modifier = Modifier.fillMaxWidth())
+            } else {
+                SubcomposeLayout(modifier = Modifier.fillMaxWidth()) { constraints ->
+                    val attributes = subcompose("attributes") {
+                        AttributeColumn(state.attribute)
+                    }.single().measure(constraints.copy(minWidth = 0, minHeight = 0))
+                    val attributeSize = IntSize(attributes.width, attributes.height)
+                    val text = subcompose("text") {
+                        VerseTextRegion(state, checked, lineMetrics, attributeSize, Modifier.fillMaxWidth())
+                    }.single().measure(constraints.copy(minHeight = 0))
+                    val height = constraints.constrainHeight(maxOf(text.height, attributes.height + lineMetrics.rowExtraPaddingPx))
+                    layout(constraints.maxWidth, height) {
+                        text.placeRelative(0, 0)
+                        attributes.placeRelative(constraints.maxWidth - attributes.width, 0)
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal data class LineMetrics(
+    val lineHeightSp: Float,
+    val rowExtraPaddingPx: Int,
+    /**
+     * Extra space the body text's first line gains above its glyphs from
+     * `lineHeight` + `LineHeightStyle(Proportional, Trim.None)`; the gutter
+     * verse number is padded down by this much to stay level with it.
+     */
+    val gutterTopPaddingPx: Int,
+    /**
+     * Height reserved above every line for ruby text, including its gap.
+     * Zero when the verse has no ruby; then the extra line spacing is
+     * distributed proportionally instead of stacked on top.
+     */
+    val rubyBandPx: Float,
+    /** Distance from the baseline up to the top of the base glyphs. */
+    val baseAscentPx: Float,
+)
+
+@Composable
+private fun rememberLineMetrics(state: VerseItemComposeState): LineMetrics {
+    val density = LocalDensity.current
+    val rubyFontSizeDp = if (state.render.rubies.isEmpty()) 0f else state.fontSizeDp * RUBY_FONT_SIZE_RATIO
+    val scaledDensity = density.density * density.fontScale
+    return remember(state.typeface, state.fontSizeDp, state.fontBold, state.lineSpacingMult, scaledDensity, rubyFontSizeDp) {
+        computeLineMetrics(state.typeface, state.fontSizeDp, state.fontBold, state.lineSpacingMult, scaledDensity, rubyFontSizeDp)
+    }
+}
+
+/**
+ * Derives Compose line metrics from Android font metrics so text laid out with
+ * `lineHeight` + `LineHeightStyle(Proportional, Trim.None)` matches a TextView
+ * using `setLineSpacing(0, lineSpacingMult)`. [scaledDensity] is
+ * `density * fontScale`, which is what an sp resolves to, so a px figure
+ * returned as sp is `/scaledDensity`.
+ *
+ * A positive [rubyFontSizeDp] reserves a band for ruby text above every line.
+ * Such text is laid out with `LineHeightStyle.Alignment.Bottom`, which stacks
+ * all extra line height (the ruby band and the line-spacing surplus) on top of
+ * the glyphs, so the gutter padding covers the whole surplus.
+ */
+internal fun computeLineMetrics(
+    typeface: android.graphics.Typeface?,
+    fontSizeDp: Float,
+    fontBold: Int,
+    lineSpacingMult: Float,
+    scaledDensity: Float,
+    rubyFontSizeDp: Float,
+): LineMetrics {
+    val resolvedTypeface = if (fontBold == android.graphics.Typeface.BOLD) {
+        android.graphics.Typeface.create(typeface ?: android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+    } else {
+        typeface ?: android.graphics.Typeface.DEFAULT
+    }
+    val paint = android.text.TextPaint().apply {
+        isAntiAlias = true
+        textSize = fontSizeDp * scaledDensity
+        this.typeface = resolvedTypeface
+    }
+    val fm = paint.fontMetrics
+    val naturalLineHeightPx = fm.descent - fm.ascent + fm.leading
+    val rubyBandPx = if (rubyFontSizeDp <= 0f) 0f else {
+        val rubyFm = android.text.TextPaint(paint).apply { textSize = rubyFontSizeDp * scaledDensity }.fontMetrics
+        (rubyFm.descent - rubyFm.ascent) + rubyFontSizeDp * scaledDensity * RUBY_GAP_RATIO
+    }
+    val targetLineHeightPx = naturalLineHeightPx * lineSpacingMult + rubyBandPx
+    val rowExtraPaddingPx = (naturalLineHeightPx * (lineSpacingMult - 1f) + 0.5f).toInt()
+    val glyphHeightPx = fm.descent - fm.ascent
+    val gutterTopPaddingPx = when {
+        glyphHeightPx <= 0f -> 0
+        rubyBandPx > 0f -> (targetLineHeightPx - glyphHeightPx + 0.5f).toInt().coerceAtLeast(0)
+        else -> ((targetLineHeightPx - glyphHeightPx) * (-fm.ascent) / glyphHeightPx + 0.5f).toInt().coerceAtLeast(0)
+    }
+    return LineMetrics(
+        lineHeightSp = targetLineHeightPx / scaledDensity,
+        rowExtraPaddingPx = rowExtraPaddingPx,
+        gutterTopPaddingPx = gutterTopPaddingPx,
+        rubyBandPx = rubyBandPx,
+        baseAscentPx = -fm.ascent,
+    )
+}
+
+/**
+ * The verse text region. Two children share the same coordinate space: the
+ * wrapped verse text fills the available width, and (when the renderer puts
+ * the verse number in the gutter) a small overlay places the number at
+ * top-start, sitting inside the leading margin reserved by the paragraph's
+ * TextIndent.
+ */
+@Composable
+private fun VerseTextRegion(
+    state: VerseItemComposeState,
+    checked: Boolean,
+    lineMetrics: LineMetrics,
+    attributeSize: IntSize,
+    modifier: Modifier = Modifier,
+) {
+    val textColor = Color(state.fontColor)
+    val numberColor = if (checked && !LocalInspectionMode.current) {
+        val applied = App.services.uiDimensions.applied()
+        val background = TextColorUtil.readingBackground(applied.backgroundColor, selectedVerseBackgroundColor(), true)
+        Color(TextColorUtil.adjustForContrast(state.fontColor, background, applied.textColorAdjustment))
+    } else {
+        Color(if (checked) state.fontColor else state.verseNumberColor)
+    }
+
+    val textStyle = remember(
+        state.fontSizeDp,
+        textColor,
+        lineMetrics,
+        state.typeface,
+        state.fontBold,
+    ) {
+        val bold = state.fontBold == android.graphics.Typeface.BOLD
+        val fontFamily = composeFontFamilyFor(state.typeface)
+        TextStyle(
+            color = textColor,
+            fontSize = state.fontSizeDp.sp,
+            lineHeight = lineMetrics.lineHeightSp.sp,
+            lineHeightStyle = LineHeightStyle(
+                alignment = if (lineMetrics.rubyBandPx > 0f) LineHeightStyle.Alignment.Bottom else LineHeightStyle.Alignment.Proportional,
+                trim = LineHeightStyle.Trim.None,
+            ),
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+            platformStyle = PlatformTextStyle(includeFontPadding = false),
+            fontFamily = fontFamily,
+        )
+    }
+
+    Box(modifier = modifier) {
+        if (attributeSize.width == 0) {
+            VerseBodyText(state, state.render, textStyle, lineMetrics, textColor, isRubyPrepared = false)
+        } else {
+            VerseTextAroundAttributes(state, textStyle, lineMetrics, textColor, attributeSize)
+        }
+
+        val gutter = state.render.gutterVerseNumber
+        if (gutter != null) {
+            BasicText(
+                text = AnnotatedString(gutter),
+                style = textStyle.copy(
+                    color = numberColor,
+                    fontSize = state.verseNumberFontSizeDp.sp,
+                    fontWeight = FontWeight.Normal,
+                    fontFamily = composeFontFamilyFor(state.typeface),
+                    lineHeight = TextUnit.Unspecified,
+                ),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = with(LocalDensity.current) { lineMetrics.gutterTopPaddingPx.toDp() }),
+            )
+        }
+    }
+}
+
+@Composable
+private fun VerseTextAroundAttributes(
+    state: VerseItemComposeState,
+    textStyle: TextStyle,
+    lineMetrics: LineMetrics,
+    textColor: Color,
+    attributeSize: IntSize,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val rubyStyle = remember(textStyle, state.fontSizeDp) { rubyTextStyle(textStyle, state.fontSizeDp) }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val narrowWidth = (constraints.maxWidth - attributeSize.width).coerceAtLeast(0)
+        if (narrowWidth == 0) {
+            VerseBodyText(
+                state, state.render, textStyle, lineMetrics, textColor,
+                isRubyPrepared = false,
+                modifier = Modifier.padding(top = with(density) { attributeSize.height.toDp() }),
+            )
+        } else {
+            val flow = remember(state.render, textStyle, rubyStyle, textMeasurer, density, narrowWidth, attributeSize.height) {
+                val preparedText = widenRubyBases(state.render.text, state.render.rubies, textStyle, rubyStyle, textMeasurer, density, narrowWidth)
+                val narrowLayout = textMeasurer.measure(preparedText, textStyle, constraints = Constraints(maxWidth = narrowWidth))
+                splitVerseAroundAttributes(state.render, preparedText, narrowLayout, attributeSize.height)
+            }
+            Column {
+                VerseBodyText(
+                    state, flow.first, textStyle, lineMetrics, textColor,
+                    isRubyPrepared = true,
+                    modifier = Modifier.width(with(density) { narrowWidth.toDp() }),
+                )
+                flow.second?.let { remaining ->
+                    VerseBodyText(state, remaining, textStyle, lineMetrics, textColor, isRubyPrepared = false)
+                }
+            }
+        }
+    }
+}
+
+private fun rubyTextStyle(textStyle: TextStyle, fontSizeDp: Float): TextStyle = textStyle.copy(
+    fontSize = (fontSizeDp * RUBY_FONT_SIZE_RATIO).sp,
+    lineHeight = TextUnit.Unspecified,
+    fontWeight = FontWeight.Normal,
+)
+
+@Composable
+private fun VerseBodyText(
+    state: VerseItemComposeState,
+    render: VerseRendererCompose.Result,
+    textStyle: TextStyle,
+    lineMetrics: LineMetrics,
+    textColor: Color,
+    isRubyPrepared: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val isRubyDebug = !LocalInspectionMode.current && ExperimentalFlags.debugRubyGeometry()
+    val textModifier = Modifier.fillMaxWidth().inlineLinkTapDetector(
+        layoutResultProvider = { textLayoutResult },
+        inlineLinks = render.inlineLinks,
+        onClick = state.onInlineLinkClick,
+        onMiss = state.onClick,
+    )
+    if (render.rubies.isEmpty() && !isRubyDebug) {
+        BasicText(render.text, modifier.then(textModifier), style = textStyle, onTextLayout = { textLayoutResult = it })
+    } else {
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val rubyStyle = remember(textStyle, state.fontSizeDp) { rubyTextStyle(textStyle, state.fontSizeDp) }
+        BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+            val availableWidthPx = constraints.maxWidth
+            val displayText = remember(render.text, render.rubies, textStyle, rubyStyle, textMeasurer, density, availableWidthPx, isRubyPrepared) {
+                if (isRubyPrepared) render.text else widenRubyBases(render.text, render.rubies, textStyle, rubyStyle, textMeasurer, density, availableWidthPx)
+            }
+            BasicText(
+                text = displayText,
+                style = textStyle,
+                modifier = textModifier.rubyOverlay(
+                    rubies = render.rubies,
+                    layoutResultProvider = { textLayoutResult },
+                    textMeasurer = textMeasurer,
+                    rubyStyle = rubyStyle,
+                    textColor = textColor,
+                    baseAscentPx = lineMetrics.baseAscentPx,
+                    gapPx = with(density) { rubyStyle.fontSize.toPx() } * RUBY_GAP_RATIO,
+                    debugAri = state.attribute.ari,
+                    debugSource = render.sourceText,
+                    debug = isRubyDebug,
+                ),
+                onTextLayout = { textLayoutResult = it },
+            )
+        }
+    }
+}
+
+private const val ATTRIBUTE_COUNT_TEXT_SIZE_DP = 12f
+
+private data class AttributeItem(
+    val bitmap: android.graphics.Bitmap,
+    val count: Int,
+    val countWithShadow: Boolean,
+    val countYRatio: Float,
+    val hasDrawOffset: Boolean,
+    val onClick: () -> Unit,
+)
+
+@Composable
+private fun AttributeColumn(attribute: AttributeState, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val pxDensity = density.density
+
+    val items = remember(
+        attribute.bookmarkCount,
+        attribute.noteCount,
+        attribute.progressMarkBits,
+        attribute.hasMaps,
+        attribute.scale,
+        attribute.version,
+        attribute.versionId,
+        attribute.ari,
+        attribute.attributeListener,
+        context.resources,
+    ) {
+        buildAttributeItems(attribute, context)
+    }
+    if (items.isEmpty()) return
+
+    val widthPx = items.maxOf { it.bitmap.width }
+    val heightPx = items.sumOf { it.bitmap.height }
+    val widthDp = with(density) { widthPx.toDp() }
+    val heightDp = with(density) { heightPx.toDp() }
+
+    val countTextSizePx = ATTRIBUTE_COUNT_TEXT_SIZE_DP * pxDensity * attribute.scale
+    val drawOffsetLeftPx = Math.round(0.5f * pxDensity * attribute.scale)
+
+    val countPaint = remember(countTextSizePx) {
+        android.graphics.Paint().apply {
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            color = 0xff000000.toInt()
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+            textSize = countTextSizePx
+        }
+    }
+    val countPaintWithShadow = remember(countTextSizePx, pxDensity) {
+        android.graphics.Paint(countPaint).apply {
+            setShadowLayer(pxDensity * 4f, 0f, 0f, 0xffffffff.toInt())
+        }
+    }
+
+    androidx.compose.foundation.Canvas(
+        modifier = modifier
+            .size(widthDp, heightDp)
+            .pointerInput(items) {
+                detectTapGestures { offset ->
+                    var y = 0
+                    for (item in items) {
+                        val itemBottom = y + item.bitmap.height
+                        if (offset.y < itemBottom) {
+                            item.onClick()
+                            return@detectTapGestures
+                        }
+                        y = itemBottom
+                    }
+                }
+            },
+    ) {
+        var y = 0
+        for (item in items) {
+            val xOffset = if (item.hasDrawOffset) drawOffsetLeftPx else 0
+            drawIntoCanvas { canvas ->
+                val native = canvas.nativeCanvas
+                native.drawBitmap(item.bitmap, xOffset.toFloat(), y.toFloat(), null)
+                if (item.count > 1) {
+                    val paint = if (item.countWithShadow) countPaintWithShadow else countPaint
+                    native.drawText(
+                        item.count.toString(),
+                        xOffset + item.bitmap.width / 2f,
+                        y + item.bitmap.height * item.countYRatio,
+                        paint,
+                    )
+                }
+            }
+            y += item.bitmap.height
+        }
+    }
+}
+
+private fun buildAttributeItems(attribute: AttributeState, context: android.content.Context): List<AttributeItem> {
+    val list = mutableListOf<AttributeItem>()
+
+    if (attribute.bookmarkCount > 0) {
+        list += AttributeItem(
+            bitmap = AttributeView.renderScaledIcon(context, R.drawable.ic_attr_bookmark, attribute.scale),
+            count = attribute.bookmarkCount,
+            countWithShadow = false,
+            countYRatio = 3f / 4f,
+            hasDrawOffset = true,
+            onClick = {
+                val v = attribute.version ?: return@AttributeItem
+                attribute.attributeListener.onBookmarkAttributeClick(v, attribute.versionId ?: "", attribute.ari)
+            },
+        )
+    }
+    if (attribute.noteCount > 0) {
+        list += AttributeItem(
+            bitmap = AttributeView.renderScaledIcon(context, R.drawable.ic_attr_note, attribute.scale),
+            count = attribute.noteCount,
+            countWithShadow = true,
+            countYRatio = 7f / 10f,
+            hasDrawOffset = true,
+            onClick = {
+                val v = attribute.version ?: return@AttributeItem
+                attribute.attributeListener.onNoteAttributeClick(v, attribute.versionId ?: "", attribute.ari)
+            },
+        )
+    }
+    if (attribute.progressMarkBits != 0) {
+        for (presetId in 0 until AttributeView.PROGRESS_MARK_TOTAL_COUNT) {
+            if (attribute.progressMarkBits and (1 shl (AttributeView.PROGRESS_MARK_BITS_START + presetId)) != 0) {
+                list += AttributeItem(
+                    bitmap = AttributeView.renderScaledIcon(
+                        context,
+                        AttributeView.getProgressMarkIconResource(presetId),
+                        attribute.scale,
+                    ),
+                    count = 0,
+                    countWithShadow = false,
+                    countYRatio = 0f,
+                    hasDrawOffset = false,
+                    onClick = {
+                        val v = attribute.version ?: return@AttributeItem
+                        attribute.attributeListener.onProgressMarkAttributeClick(v, attribute.versionId ?: "", presetId)
+                    },
+                )
+            }
+        }
+    }
+    if (attribute.hasMaps) {
+        list += AttributeItem(
+            bitmap = AttributeView.renderScaledIcon(context, R.drawable.ic_attr_has_maps, attribute.scale),
+            count = 0,
+            countWithShadow = false,
+            countYRatio = 0f,
+            hasDrawOffset = true,
+            onClick = {
+                val v = attribute.version ?: return@AttributeItem
+                attribute.attributeListener.onHasMapsAttributeClick(v, attribute.versionId ?: "", attribute.ari)
+            },
+        )
+    }
+
+    return list
+}
+
+// ---- Overlays / decorations ----
+
+@Composable
+private fun selectedVerseBackgroundColor(): Int = if (LocalInspectionMode.current) {
+    LocalContext.current.resources.getInteger(R.integer.pref_selectedVerseBgColor_default)
+} else {
+    Preferences.getInt(R.string.pref_selectedVerseBgColor_key, R.integer.pref_selectedVerseBgColor_default)
+}
+
+@Composable
+private fun Modifier.checkedOverlay(checked: Boolean): Modifier {
+    if (!checked) return this
+    val color = ColorUtils.setAlphaComponent(selectedVerseBackgroundColor(), TextColorUtil.CHECKED_VERSE_OVERLAY_ALPHA)
+    return drawBehind { drawRect(color = Color(color)) }
+}
+
+@Composable
+private fun Modifier.audioHighlightOverlay(audioHighlightColor: Int): Modifier {
+    // Playback changes pulse before settling; animation owns the color's alpha.
+    if (audioHighlightColor == 0) return this
+    val alpha = remember { Animatable(AUDIO_HIGHLIGHT_FLASH_ALPHA) }
+    LaunchedEffect(audioHighlightColor) {
+        alpha.snapTo(AUDIO_HIGHLIGHT_FLASH_ALPHA)
+        alpha.animateTo(
+            AUDIO_HIGHLIGHT_STEADY_ALPHA,
+            tween(durationMillis = AUDIO_HIGHLIGHT_FLASH_MS, easing = LinearEasing),
+        )
+    }
+    return drawBehind {
+        val a = alpha.value
+        if (a <= 0f) return@drawBehind
+        val tinted = ColorUtils.setAlphaComponent(audioHighlightColor, (a * 255f).toInt().coerceIn(0, 255))
+        drawRect(color = Color(tinted))
+    }
+}
+
+@Composable
+private fun Modifier.attentionOverlay(attentionStart: Long, onDone: () -> Unit): Modifier {
+    if (attentionStart == 0L) return this
+    // Frame timestamps are monotonic; attentionStart uses wall-clock time.
+    val now = remember(attentionStart) { mutableLongStateOf(System.currentTimeMillis()) }
+    val colorRgb = selectedVerseBackgroundColor()
+    LaunchedEffect(attentionStart) {
+        while (true) {
+            withFrameMillis { now.longValue = System.currentTimeMillis() }
+            if (now.longValue - attentionStart >= ATTENTION_DURATION_MS) {
+                onDone()
+                break
+            }
+        }
+    }
+    return drawBehind {
+        val elapsed = now.longValue - attentionStart
+        if (elapsed >= ATTENTION_DURATION_MS) return@drawBehind
+        val alpha = (0.4f * 255f * (1f - elapsed.toFloat() / ATTENTION_DURATION_MS)).toInt().coerceIn(0, 255)
+        val tinted = ColorUtils.setAlphaComponent(colorRgb, alpha)
+        drawRect(color = Color(tinted))
+    }
+}
+
+@Composable
+private fun Modifier.dragHoverOverlay(dragHover: Boolean): Modifier {
+    if (!dragHover) return this
+    val context = LocalContext.current
+    val drawable = remember(context) {
+        ResourcesCompat.getDrawable(context.resources, R.drawable.item_verse_bg_draghovered, context.theme)
+    } ?: return this
+    return drawBehind {
+        drawIntoCanvas { canvas ->
+            drawable.setBounds(0, 0, size.width.toInt(), size.height.toInt())
+            drawable.draw(canvas.nativeCanvas)
+        }
+    }
+}
+
+/**
+ * Expands small link targets by 24dp. Misses must invoke [onMiss] because this
+ * detector consumes the tap before the row's handler can receive it.
+ */
+private fun Modifier.inlineLinkTapDetector(
+    layoutResultProvider: () -> TextLayoutResult?,
+    inlineLinks: List<VerseRendererCompose.InlineLinkRange>,
+    onClick: (VerseInlineLinkSpan.Type, Int) -> Unit,
+    onMiss: () -> Unit,
+): Modifier {
+    if (inlineLinks.isEmpty()) return this
+    return this.pointerInput(inlineLinks, onClick, onMiss) {
+        val maxDistanceSquaredPx = (24.dp.toPx()).let { (it * it).toInt() }
+        detectTapGestures(onTap = { offset ->
+            val layout = layoutResultProvider()
+            if (layout == null) {
+                onMiss()
+                return@detectTapGestures
+            }
+            var best: VerseRendererCompose.InlineLinkRange? = null
+            var bestDistSq = Int.MAX_VALUE
+            for (link in inlineLinks) {
+                val rects = boundingRectsFor(layout, link.start, link.end)
+                for (rect in rects) {
+                    if (rect.contains(offset)) {
+                        best = link
+                        bestDistSq = 0
+                        break
+                    }
+                    val d = squaredDistanceFromRect(offset, rect)
+                    if (d <= maxDistanceSquaredPx && d < bestDistSq) {
+                        best = link
+                        bestDistSq = d
+                    }
+                }
+                if (bestDistSq == 0) break
+            }
+            if (best != null) onClick(best.type, best.arif) else onMiss()
+        })
+    }
+}
+
+internal fun boundingRectsFor(layout: TextLayoutResult, start: Int, end: Int): List<Rect> {
+    // Glyph boxes respect bidi runs and the exclusive end at a line wrap.
+    return (start.coerceAtLeast(0) until end.coerceAtMost(layout.layoutInput.text.length))
+        .map { layout.getBoundingBox(it) }
+}
+
+private fun squaredDistanceFromRect(offset: Offset, rect: Rect): Int {
+    val dx = when {
+        offset.x < rect.left -> rect.left - offset.x
+        offset.x > rect.right -> offset.x - rect.right
+        else -> 0f
+    }
+    val dy = when {
+        offset.y < rect.top -> rect.top - offset.y
+        offset.y > rect.bottom -> offset.y - rect.bottom
+        else -> 0f
+    }
+    return (dx * dx + dy * dy).toInt()
+}

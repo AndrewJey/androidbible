@@ -1,0 +1,97 @@
+package yuku.alkitab.base.storage
+
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class OldVerseTextDecoderTest {
+    private fun bytes(vararg values: Int) = ByteArray(values.size) { values[it].toByte() }
+
+    @Test
+    fun `Utf8 separateIntoVerses splits on newlines and decodes UTF-8`() {
+        val ba = "In the beginning\nCafé א\n".toByteArray(Charsets.UTF_8)
+
+        assertArrayEquals(arrayOf("In the beginning", "Café א"), OldVerseTextDecoder.Utf8().separateIntoVerses(ba, false))
+    }
+
+    @Test
+    fun `Utf8 separateIntoVerses drops text after the last newline`() {
+        val ba = "one\ntwo\nunterminated".toByteArray(Charsets.UTF_8)
+
+        assertArrayEquals(arrayOf("one", "two"), OldVerseTextDecoder.Utf8().separateIntoVerses(ba, false))
+    }
+
+    @Test
+    fun `Utf8 separateIntoVerses keeps empty verses`() {
+        assertArrayEquals(arrayOf("a", "", "b"), OldVerseTextDecoder.Utf8().separateIntoVerses("a\n\nb\n".toByteArray(), false))
+    }
+
+    @Test
+    fun `Utf8 separateIntoVerses lowercases when asked`() {
+        assertArrayEquals(arrayOf("god said", "let there be light"), OldVerseTextDecoder.Utf8().separateIntoVerses("God Said\nLET there be Light\n".toByteArray(), true))
+    }
+
+    @Test
+    fun `Utf8 makeIntoSingleString decodes the whole buffer including newlines`() {
+        val ba = "Café\nNext\n".toByteArray(Charsets.UTF_8)
+
+        assertEquals("Café\nNext\n", OldVerseTextDecoder.Utf8().makeIntoSingleString(ba, false))
+        assertEquals("café\nnext\n", OldVerseTextDecoder.Utf8().makeIntoSingleString("Café\nNEXT\n".toByteArray(Charsets.UTF_8), true))
+    }
+
+    @Test
+    fun `Utf8 preserves supplementary characters and emoji sequences in both read modes`() {
+        val text = "🌿 🕊️ 👩🏽‍💻 👨‍👩‍👧‍👦 🇮🇩\n@@@<r=𐐀@>𐐁@/\n"
+        val decoder = OldVerseTextDecoder.Utf8()
+        assertEquals(text, decoder.makeIntoSingleString(text.toByteArray(), false))
+        assertArrayEquals(text.dropLast(1).split('\n').toTypedArray(), decoder.separateIntoVerses(text.toByteArray(), false))
+    }
+
+    @Test
+    fun `Utf8 search casing preserves offsets and graphemes without expanding letters`() {
+        val text = "İ ΟΣ 𐐀 👩🏽‍💻 CAFÉ\n"
+        val expected = "i οσ 𐐨 👩🏽‍💻 café\n"
+        val decoder = OldVerseTextDecoder.Utf8()
+        assertEquals(text.length, expected.length)
+        assertEquals(expected, decoder.makeIntoSingleString(text.toByteArray(), true))
+        assertArrayEquals(arrayOf(expected.dropLast(1)), decoder.separateIntoVerses(text.toByteArray(), true))
+    }
+
+    @Test
+    fun `Ascii separateIntoVerses splits on newlines`() {
+        assertArrayEquals(arrayOf("Ab", "cD", ""), OldVerseTextDecoder.Ascii().separateIntoVerses("Ab\ncD\n\n".toByteArray(), false))
+    }
+
+    @Test
+    fun `Ascii separateIntoVerses drops text after the last newline`() {
+        assertArrayEquals(arrayOf("one"), OldVerseTextDecoder.Ascii().separateIntoVerses("one\ntwo".toByteArray(), false))
+    }
+
+    @Test
+    fun `Ascii separateIntoVerses lowercases only A to Z when asked`() {
+        assertArrayEquals(arrayOf("hello, world! [@]"), OldVerseTextDecoder.Ascii().separateIntoVerses("HeLLo, World! [@]\n".toByteArray(), true))
+    }
+
+    @Test
+    fun `Ascii separateIntoVerses decodes Latin-1 consistently`() {
+        assertArrayEquals(arrayOf("é"), OldVerseTextDecoder.Ascii().separateIntoVerses(bytes(0xe9, 0x0a), false))
+    }
+
+    @Test
+    fun `Ascii makeIntoSingleString maps each byte to the char with the same value`() {
+        assertEquals("Aé\n", OldVerseTextDecoder.Ascii().makeIntoSingleString(bytes(0x41, 0xe9, 0x0a), false))
+        assertEquals("abÉ", OldVerseTextDecoder.Ascii().makeIntoSingleString(bytes(0x41, 0x42, 0xc9), true))
+    }
+    @Test
+    fun `Ascii handles long verses without mutating the input`() {
+        val verse = "A".repeat(12000) + "Éé"
+        val input = "$verse\n".toByteArray(Charsets.ISO_8859_1)
+        val original = input.copyOf()
+        val decoder = OldVerseTextDecoder.Ascii()
+        assertArrayEquals(arrayOf(verse), decoder.separateIntoVerses(input, false))
+        assertArrayEquals(arrayOf("a".repeat(12000) + "Éé"), decoder.separateIntoVerses(input, true))
+        assertArrayEquals(original, input)
+        assertEquals("a".repeat(12000) + "Éé\n", decoder.makeIntoSingleString(input, true))
+        assertArrayEquals(original, input)
+    }
+}

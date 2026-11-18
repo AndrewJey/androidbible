@@ -4,20 +4,21 @@ import android.app.IntentService;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Handler;
-import android.util.Log;
 import android.widget.Toast;
+import androidx.annotation.Keep;
 import com.google.gson.JsonSyntaxException;
-import yuku.afw.storage.Preferences;
-import yuku.alkitab.base.App;
-import yuku.alkitab.base.ac.VersionsActivity;
-import yuku.alkitab.base.config.VersionConfig;
-import yuku.alkitab.base.storage.Prefkey;
-import yuku.alkitab.base.util.AppLog;
-import yuku.alkitab.debug.BuildConfig;
-import yuku.alkitab.debug.R;
-
 import java.io.IOException;
 import java.util.Date;
+import yuku.afw.storage.Preferences;
+import yuku.alkitab.base.App;
+import yuku.alkitab.base.config.VersionConfig;
+import yuku.alkitab.base.connection.Connections;
+import yuku.alkitab.base.events.AppEvents;
+import yuku.alkitab.base.storage.Prefkey;
+import yuku.alkitab.base.util.AppLog;
+import yuku.alkitab.base.widget.Localized;
+import yuku.alkitab.debug.BuildConfig;
+import yuku.alkitab.debug.R;
 
 public class VersionConfigUpdaterService extends IntentService {
 	private static final String TAG = VersionConfigUpdaterService.class.getSimpleName();
@@ -61,14 +62,15 @@ public class VersionConfigUpdaterService extends IntentService {
 		if (intent != null) {
 			final boolean auto = intent.getBooleanExtra(EXTRA_auto, true);
 			try {
-				App.getLbm().sendBroadcast(new Intent(VersionsActivity.VersionListFragment.ACTION_UPDATE_REFRESHING_STATUS).putExtra(VersionsActivity.VersionListFragment.EXTRA_refreshing, true));
+				AppEvents.emitVersionListRefreshingStatus(true);
 				handleCheckUpdate(auto);
 			} finally {
-				App.getLbm().sendBroadcast(new Intent(VersionsActivity.VersionListFragment.ACTION_UPDATE_REFRESHING_STATUS).putExtra(VersionsActivity.VersionListFragment.EXTRA_refreshing, false));
+				AppEvents.emitVersionListRefreshingStatus(false);
 			}
 		}
 	}
 
+	@Keep
 	static class ModifyTimeJson {
 		public boolean success;
 		public String message;
@@ -89,12 +91,12 @@ public class VersionConfigUpdaterService extends IntentService {
 
 		try {
 			AppLog.d(TAG, "Downloading list modify time");
-			modifyTimeBody = App.downloadString(BuildConfig.SERVER_HOST + "versions/list_modify_time?packageName=" + Uri.encode(getPackageName()) + "&versionCode=" + Uri.encode(String.valueOf(App.getVersionCode())));
+			modifyTimeBody = Connections.downloadString(BuildConfig.SERVER_HOST + "/versions/list_modify_time?packageName=" + Uri.encode(getPackageName()) + "&versionCode=" + Uri.encode(String.valueOf(App.getVersionCode())));
 		} catch (IOException e) {
 			AppLog.e(TAG, "failed to download modify time", e);
 
 			if (!auto) {
-				toast(getString(R.string.version_config_updater_error_download_modify_time));
+				toast(Localized.string(R.string.version_config_updater_error_download_modify_time));
 			}
 
 			return;
@@ -107,14 +109,14 @@ public class VersionConfigUpdaterService extends IntentService {
 			AppLog.e(TAG, "failed to parse modify time file", e);
 
 			if (!auto) {
-				toast(getString(R.string.version_config_updater_error_modify_time_cannot_parse));
+				toast(Localized.string(R.string.version_config_updater_error_modify_time_cannot_parse));
 			}
 			return;
 		}
 
 		if (!modifyTimeObj.success) {
 			if (!auto) {
-				toast(getString(R.string.version_config_updater_error_modify_time_failed, modifyTimeObj.message));
+				toast(Localized.string(R.string.version_config_updater_error_modify_time_failed, modifyTimeObj.message));
 			}
 			return;
 		}
@@ -123,7 +125,7 @@ public class VersionConfigUpdaterService extends IntentService {
 		if (localModifyTime != 0 && localModifyTime >= modifyTimeObj.modifyTime) {
 			AppLog.d(TAG, "Update: no newer version available. Server modify time: " + new Date(modifyTimeObj.modifyTime * 1000L) + " Local modify time: " + new Date(localModifyTime * 1000L));
 			if (!auto) {
-				toast(getString(R.string.version_config_updater_no_newer_available));
+				toast(Localized.string(R.string.version_config_updater_no_newer_available));
 			}
 			return;
 		}
@@ -131,12 +133,12 @@ public class VersionConfigUpdaterService extends IntentService {
 		final String versionConfigBody;
 		try {
 			AppLog.d(TAG, "Downloading version list");
-			versionConfigBody = App.downloadString(modifyTimeObj.downloadUrl);
+			versionConfigBody = Connections.downloadString(modifyTimeObj.downloadUrl);
 		} catch (IOException e) {
 			AppLog.e(TAG, "failed to download version list", e);
 
 			if (!auto) {
-				toast(getString(R.string.version_config_updater_error_download_list));
+				toast(Localized.string(R.string.version_config_updater_error_download_list));
 			}
 
 			return;
@@ -144,7 +146,7 @@ public class VersionConfigUpdaterService extends IntentService {
 
 		if (!VersionConfig.isValid(versionConfigBody)) {
 			if (!auto) {
-				toast(getString(R.string.version_config_updater_error_parsing_list));
+				toast(Localized.string(R.string.version_config_updater_error_parsing_list));
 			}
 
 			return;
@@ -153,16 +155,16 @@ public class VersionConfigUpdaterService extends IntentService {
 		final boolean updateSuccess = VersionConfig.useLatest(versionConfigBody, modifyTimeObj.modifyTime);
 		if (!updateSuccess) {
 			if (!auto) {
-				toast(getString(R.string.version_config_cannot_write_updated_list));
+				toast(Localized.string(R.string.version_config_cannot_write_updated_list));
 			}
 			return;
 		}
 
 		if (!auto) {
-			toast(getString(R.string.version_config_updater_updated));
+			toast(Localized.string(R.string.version_config_updater_updated));
 		}
 
 		Preferences.setInt(Prefkey.version_config_last_update_check, now);
-		App.getLbm().sendBroadcast(new Intent(VersionsActivity.VersionListFragment.ACTION_RELOAD));
+		AppEvents.emitVersionListReload();
 	}
 }

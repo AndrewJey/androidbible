@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<view
-	android:id="@+id/left_drawer"
+<view android:id="@+id/left_drawer"
 	class="yuku.alkitab.base.widget.LeftDrawer$Songs"
 	xmlns:android="http://schemas.android.com/apk/res/android"
 	xmlns:tools="http://schemas.android.com/tools"
@@ -24,7 +22,7 @@
 			android:layout_height="wrap_content" />
 
 		<LinearLayout
-			android:layout_width="fill_parent"
+			android:layout_width="match_parent"
 			android:layout_height="56dp"
 			android:gravity="center_vertical"
 			android:orientation="horizontal">
@@ -54,6 +52,7 @@
 			<ImageButton
 				android:id="@+id/bBackspace"
 				style="@style/SongCodeKeypadButton"
+				android:contentDescription="@string/desc_backspace"
 				android:scaleType="center"
 				android:src="@drawable/ic_keypad_backspace" />
 		</LinearLayout>
@@ -171,6 +170,8 @@
 					android:textSize="16sp" />
 			</LinearLayout>
 		</LinearLayout>
+
+		<include layout="@layout/left_drawer_display" />
 
 		<include
 			layout="@layout/left_drawer_footer"

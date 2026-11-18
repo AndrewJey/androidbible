@@ -1,14 +1,13 @@
 package yuku.alkitab.base.devotion;
 
-import android.support.annotation.NonNull;
 import android.text.Html;
 import android.text.SpannableStringBuilder;
+import androidx.annotation.NonNull;
 import yuku.alkitab.base.ac.DevotionActivity;
 import yuku.alkitab.base.widget.CallbackSpan;
 
 public class ArticleMorningEveningEnglish extends DevotionArticle {
-	public static final String TAG = ArticleMorningEveningEnglish.class.getSimpleName();
-	private String date;
+	private final String date;
 	private String body;
 	private boolean readyToUse;
 

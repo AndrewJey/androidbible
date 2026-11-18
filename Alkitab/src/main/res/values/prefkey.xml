@@ -3,6 +3,7 @@
 	<string name="pref_keepScreenOn_key" translatable="false">nyalakanTerusLayar</string>
 	<string name="pref_textPadding_key" translatable="false">textPadding</string>
 	<string name="pref_bottomToolbarOnText_key" translatable="false">bottomToolbarOnText</string>
+	<string name="pref_verseNumberIsShown_key" translatable="false">verseNumberIsShown</string>
 
 	<string name="pref_volumeButtonNavigation_key" translatable="false">tombolVolumeBuatPindah</string>
 
@@ -33,4 +34,24 @@
 	<string name="pref_selectedVerseBgColor_key" translatable="false">selectedVerseBgColor</string>
 
 	<string name="pref_forceFontScale_key" translatable="false">forceFontScale</string>
+
+	<string name="pref_data_transfer_export_key" translatable="false">data_transfer_export</string>
+	<string name="pref_data_transfer_import_key" translatable="false">data_transfer_import</string>
+
+	<string name="pref_useLegacyVerseItem_key" translatable="false">useLegacyVerseItem</string>
+	<bool name="pref_useLegacyVerseItem_default">false</bool>
+
+	<string name="pref_useLegacyGoto_key" translatable="false">useLegacyGoto</string>
+	<bool name="pref_useLegacyGoto_default">false</bool>
+	<string name="pref_useLegacyToolbar_key" translatable="false">useLegacyToolbar</string>
+	<bool name="pref_useLegacyToolbar_default">false</bool>
+
+	<string name="pref_useLegacySong_key" translatable="false">useLegacySong</string>
+	<bool name="pref_useLegacySong_default">false</bool>
+
+	<string name="pref_useLegacySyncLogin_key" translatable="false">useLegacySyncLogin</string>
+	<bool name="pref_useLegacySyncLogin_default">false</bool>
+
+	<string name="pref_debugRubyGeometry_key" translatable="false">debugRubyGeometry</string>
+	<bool name="pref_debugRubyGeometry_default">false</bool>
 </resources>

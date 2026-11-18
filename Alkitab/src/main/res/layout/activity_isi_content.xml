@@ -1,123 +1,244 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout android:id="@+id/overlayContainer"
-	xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
 	xmlns:tools="http://schemas.android.com/tools"
-	android:layout_width="fill_parent"
-	android:layout_height="fill_parent">
+	xmlns:app="http://schemas.android.com/apk/res-auto"
+	android:id="@+id/overlayContainer"
+	android:layout_width="match_parent"
+	android:layout_height="match_parent">
 
 	<LinearLayout
 		android:id="@+id/root"
-		android:layout_width="fill_parent"
-		android:layout_height="fill_parent"
+		android:layout_width="match_parent"
+		android:layout_height="match_parent"
 		android:orientation="vertical"
 		tools:ignore="UselessParent">
 
-		<android.support.v7.widget.Toolbar
-			android:id="@+id/toolbar"
+		<FrameLayout
+			android:id="@+id/toolbarHost"
 			android:layout_width="match_parent"
 			android:layout_height="?attr/actionBarSize"
-			android:background="?attr/colorPrimary">
+			android:background="?attr/colorPrimary"
+			android:elevation="4dp"
+			android:outlineProvider="bounds">
 
-			<TextView
-				android:id="@+id/bVersion"
-				style="@style/FakeSpinner"
-				android:layout_width="72dp"
-				android:layout_height="match_parent"
-				android:layout_gravity="end"
-				android:gravity="center"
-				android:textStyle="bold"
-				tools:text="VERSNM" />
-
-			<yuku.alkitab.base.widget.NavFrameLayout
+			<androidx.appcompat.widget.Toolbar
+				android:id="@+id/toolbar"
+				android:theme="@style/ThemeOverlay.Alkitab.Toolbar"
 				android:layout_width="match_parent"
 				android:layout_height="match_parent">
 
-				<yuku.alkitab.base.widget.GotoButton
-					android:id="@+id/bGoto"
-					style="?actionButtonStyle"
-					android:layout_width="match_parent"
-					android:layout_height="match_parent"
-					android:layout_marginLeft="@dimen/nav_goto_side_margin"
-					android:layout_marginRight="@dimen/nav_goto_side_margin"
-					android:fontFamily="sans-serif-medium"
-					android:includeFontPadding="false"
-					android:paddingLeft="0dp"
-					android:paddingRight="0dp"
-					android:textSize="16sp"
-					tools:text="Long Name Of Book 123" />
-
-				<ImageButton
-					android:id="@+id/bLeft"
-					style="?actionButtonStyle"
-					android:layout_width="@dimen/nav_prevnext_width"
-					android:layout_height="match_parent"
-					android:layout_gravity="start"
-					android:contentDescription="@string/desc_previous_chapter"
-					android:scaleType="center"
-					android:src="@drawable/ic_nav_left_light" />
-
-				<ImageButton
-					android:id="@+id/bRight"
-					style="?actionButtonStyle"
-					android:layout_width="@dimen/nav_prevnext_width"
+				<TextView
+					android:id="@+id/bVersion"
+					style="@style/FakeSpinner"
+					android:layout_width="72dp"
 					android:layout_height="match_parent"
 					android:layout_gravity="end"
-					android:contentDescription="@string/desc_next_chapter"
-					android:padding="16dp"
-					android:scaleType="center"
-					android:src="@drawable/ic_nav_right_light" />
-			</yuku.alkitab.base.widget.NavFrameLayout>
+					android:gravity="center"
+					android:textStyle="bold"
+					tools:text="VERSNM" />
 
-		</android.support.v7.widget.Toolbar>
+				<yuku.alkitab.base.widget.NavFrameLayout
+					android:layout_width="match_parent"
+					android:layout_height="match_parent">
 
-		<yuku.alkitab.base.widget.TwofingerLinearLayout
-			android:id="@+id/splitRoot"
-			android:layout_width="fill_parent"
-			android:layout_height="0dp"
-			android:layout_weight="1"
-			android:orientation="vertical"
-			tools:ignore="NestedWeights">
+					<yuku.alkitab.base.widget.GotoButton
+						android:id="@+id/bGoto"
+						style="?actionButtonStyle"
+						android:layout_width="match_parent"
+						android:layout_height="match_parent"
+						android:layout_marginStart="@dimen/nav_goto_side_margin"
+						android:layout_marginEnd="@dimen/nav_goto_side_margin"
+						android:fontFamily="sans-serif-medium"
+						android:includeFontPadding="false"
+						android:paddingStart="0dp"
+						android:paddingEnd="0dp"
+						android:textSize="16sp"
+						tools:text="Long Name Of Book 123" />
 
-			<yuku.alkitab.base.widget.VersesView
-				android:id="@+id/lsSplit0"
+					<ImageButton
+						android:id="@+id/bLeft"
+						style="?actionButtonStyle"
+						android:layout_width="@dimen/nav_prevnext_width"
+						android:layout_height="match_parent"
+						android:layout_gravity="start"
+						android:contentDescription="@string/desc_previous_chapter"
+						android:scaleType="center"
+						android:src="@drawable/ic_nav_start_light" />
+
+					<ImageButton
+						android:id="@+id/bRight"
+						style="?actionButtonStyle"
+						android:layout_width="@dimen/nav_prevnext_width"
+						android:layout_height="match_parent"
+						android:layout_gravity="end"
+						android:contentDescription="@string/desc_next_chapter"
+						android:padding="16dp"
+						android:scaleType="center"
+						android:src="@drawable/ic_nav_end_light" />
+				</yuku.alkitab.base.widget.NavFrameLayout>
+
+			</androidx.appcompat.widget.Toolbar>
+
+			<androidx.compose.ui.platform.ComposeView
+				android:id="@+id/composeToolbar"
 				android:layout_width="match_parent"
 				android:layout_height="match_parent"
-				android:clipToPadding="false"
-				android:paddingLeft="@dimen/text_side_padding"
-				android:paddingRight="@dimen/text_side_padding"
-				android:scrollbarStyle="outsideOverlay" />
-
-			<yuku.alkitab.base.widget.LabeledSplitHandleButton
-				android:id="@+id/splitHandleButton"
-				android:layout_width="match_parent"
-				android:layout_height="@dimen/split_handle_thickness"
-				android:background="@null"
 				android:visibility="gone" />
 
-			<FrameLayout
-				android:layout_width="match_parent"
-				android:layout_height="match_parent">
 
-				<yuku.alkitab.base.widget.VersesView
-					android:id="@+id/lsSplit1"
+			<yuku.alkitab.base.widget.FloatingSelectionToolbar
+				android:id="@+id/selectionToolbar"
+				android:theme="@style/ThemeOverlay.Alkitab.Toolbar"
+				android:layout_width="match_parent"
+				android:layout_height="match_parent"
+				android:visibility="gone"
+				app:navigationIcon="@drawable/ic_close"
+				app:navigationContentDescription="@string/desc_close"
+				app:titleTextAppearance="@style/SmallerActionModeTitleTextAppearance" />
+
+			<!--
+				Tracks the bounds of the Compose reference button so the
+				history showcase tip has a plain View to focus on.
+			-->
+			<View
+				android:id="@+id/composeReferenceAnchor"
+				android:layout_width="0dp"
+				android:layout_height="0dp"
+				android:visibility="invisible" />
+
+		</FrameLayout>
+
+		<RelativeLayout
+			android:id="@+id/nontoolbar"
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:clipChildren="false"
+			android:layout_weight="1">
+
+			<yuku.alkitab.base.widget.TwofingerLinearLayout
+				android:id="@+id/splitRoot"
+				android:layout_width="match_parent"
+				android:layout_height="match_parent"
+				android:orientation="vertical"
+				tools:ignore="NestedWeights">
+
+				<yuku.alkitab.base.verses.EmptyableRecyclerView
+					android:id="@+id/lsSplitView0"
 					android:layout_width="match_parent"
 					android:layout_height="match_parent"
 					android:clipToPadding="false"
-					android:paddingLeft="@dimen/text_side_padding"
-					android:paddingRight="@dimen/text_side_padding"
-					android:scrollbarStyle="outsideOverlay" />
+					android:paddingStart="@dimen/text_side_padding"
+					android:paddingEnd="@dimen/text_side_padding"
+					android:scrollbarStyle="outsideOverlay"
+					android:scrollbars="vertical" />
 
-				<TextView
-					android:id="@+id/tSplitEmpty"
+				<yuku.alkitab.base.widget.LabeledSplitHandleButton
+					android:id="@+id/splitHandleButton"
+					android:layout_width="match_parent"
+					android:layout_height="@dimen/split_handle_thickness"
+					android:background="@null"
+					android:elevation="4dp"
+					android:outlineProvider="bounds"
+					android:visibility="gone" />
+
+				<yuku.alkitab.base.verses.EmptyableRecyclerView
+					android:id="@+id/lsSplitView1"
 					android:layout_width="match_parent"
 					android:layout_height="match_parent"
+					android:clipToPadding="false"
+					android:paddingStart="@dimen/text_side_padding"
+					android:paddingEnd="@dimen/text_side_padding"
+					android:scrollbarStyle="outsideOverlay"
+					android:scrollbars="vertical" />
+
+			</yuku.alkitab.base.widget.TwofingerLinearLayout>
+
+			<FrameLayout
+				android:id="@+id/feedbackButtonContainer"
+				android:layout_width="wrap_content"
+				android:layout_height="40dp"
+				android:clipChildren="false"
+				android:clipToPadding="false"
+				android:layout_alignParentStart="true"
+				android:layout_alignParentBottom="true"
+				android:layout_alignWithParentIfMissing="true"
+				android:layout_toStartOf="@id/panelBackForwardList"
+				android:layout_marginStart="16dp"
+				android:layout_marginEnd="8dp"
+				android:layout_marginBottom="8dp">
+
+				<androidx.appcompat.widget.AppCompatButton
+					android:id="@+id/bPrereleaseFeedback"
+					android:layout_width="wrap_content"
+					android:layout_height="match_parent"
+					android:background="@drawable/back_forward_list_background"
+					android:elevation="8dp"
+					android:foreground="?selectableItemBackground"
 					android:gravity="center"
-					android:paddingLeft="32dp"
-					android:paddingRight="32dp"
-					android:textAppearance="?android:attr/textAppearanceMedium"
-					tools:ignore="SelectableText" />
+					android:ellipsize="end"
+					android:maxLines="1"
+					android:minWidth="0dp"
+					android:minHeight="0dp"
+					android:paddingStart="16dp"
+					android:paddingEnd="16dp"
+					android:paddingTop="0dp"
+					android:paddingBottom="0dp"
+					android:stateListAnimator="@null"
+					android:textAllCaps="false"
+					android:textColor="@android:color/white"
+					android:textSize="14sp"
+					android:visibility="gone"
+					tools:text="Dev 123 feedback"
+					tools:visibility="visible" />
+
 			</FrameLayout>
-		</yuku.alkitab.base.widget.TwofingerLinearLayout>
+
+			<LinearLayout
+				android:id="@+id/panelBackForwardList"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:layout_alignParentEnd="true"
+				android:layout_alignParentBottom="true"
+				android:layout_marginEnd="16dp"
+				android:layout_marginBottom="8dp"
+				android:background="@drawable/back_forward_list_background"
+				android:elevation="8dp"
+				android:orientation="horizontal"
+				android:visibility="gone"
+				tools:visibility="visible">
+
+				<ImageButton
+					android:id="@+id/bBackForwardListBack"
+					android:layout_width="40dp"
+					android:layout_height="40dp"
+					android:background="?selectableItemBackground"
+					android:contentDescription="@string/desc_bfl_back"
+					android:src="@drawable/ic_undo_white_16dp"
+					android:tooltipText="@string/desc_bfl_back" />
+
+				<ImageView
+					android:layout_width="1dp"
+					android:layout_height="match_parent"
+					android:contentDescription="@null"
+					android:src="#2fff" />
+
+				<ImageButton
+					android:id="@+id/bBackForwardListForward"
+					android:layout_width="40dp"
+					android:layout_height="40dp"
+					android:background="?selectableItemBackground"
+					android:contentDescription="@string/desc_bfl_forward"
+					android:src="@drawable/ic_redo_white_16dp"
+					android:tooltipText="@string/desc_bfl_forward" />
+
+			</LinearLayout>
+
+		</RelativeLayout>
+
+		<androidx.compose.ui.platform.ComposeView
+			android:id="@+id/audio_bar"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content" />
 
 	</LinearLayout>
 

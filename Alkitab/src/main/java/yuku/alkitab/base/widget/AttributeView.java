@@ -2,18 +2,20 @@ package yuku.alkitab.base.widget;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Typeface;
-import android.support.v4.view.MotionEventCompat;
+import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
-import android.util.Log;
+import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
-import yuku.alkitab.base.App;
-import yuku.alkitab.base.util.AppLog;
-import yuku.alkitab.debug.BuildConfig;
+import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
+import androidx.appcompat.content.res.AppCompatResources;
+import androidx.core.graphics.drawable.DrawableKt;
+import java.util.Objects;
+import yuku.alkitab.base.verses.VersesController;
 import yuku.alkitab.debug.R;
 import yuku.alkitab.model.Version;
 
@@ -25,29 +27,23 @@ public class AttributeView extends View {
 	public static final int PROGRESS_MARK_BIT_MASK = (1 << PROGRESS_MARK_BITS_START) * ((1 << PROGRESS_MARK_TOTAL_COUNT) - 1);
 	private static final float COUNT_TEXT_SIZE_DP = 12.f;
 
-	static Bitmap originalBookmarkBitmap = null;
-	static Bitmap scaledBookmarkBitmap = null;
-	static Bitmap originalNoteBitmap = null;
-	static Bitmap scaledNoteBitmap = null;
-	static Bitmap[] originalProgressMarkBitmaps = new Bitmap[PROGRESS_MARK_TOTAL_COUNT];
-	static Bitmap[] scaledProgressMarkBitmaps = new Bitmap[PROGRESS_MARK_TOTAL_COUNT];
-	static Bitmap originalHasMapsBitmap = null;
-	static Bitmap scaledHasMapsBitmap = null;
-	static Paint bookmarkCountPaint;
-    static Paint noteCountPaint;
+	static final SparseArray<Bitmap> scaledIconBitmaps = new SparseArray<>();
+	static float scaledIconBitmapsScale = Float.NaN;
+	private final Paint bookmarkCountPaint;
+	private final Paint noteCountPaint;
 
-	static float density = App.context.getResources().getDisplayMetrics().density;
+	private final float density = getContext().getResources().getDisplayMetrics().density;
 
-	static {
+	{
 		bookmarkCountPaint = new Paint();
-        bookmarkCountPaint.setTypeface(Typeface.DEFAULT_BOLD);
-        bookmarkCountPaint.setColor(0xff000000);
-        bookmarkCountPaint.setAntiAlias(true);
-        bookmarkCountPaint.setTextAlign(Paint.Align.CENTER);
+		bookmarkCountPaint.setTypeface(Typeface.DEFAULT_BOLD);
+		bookmarkCountPaint.setColor(0xff000000);
+		bookmarkCountPaint.setAntiAlias(true);
+		bookmarkCountPaint.setTextAlign(Paint.Align.CENTER);
 
-        noteCountPaint = new Paint(bookmarkCountPaint);
+		noteCountPaint = new Paint(bookmarkCountPaint);
 		noteCountPaint.setShadowLayer(density * 4, 0, 0, 0xffffffff);
-    }
+	}
 
 	int bookmark_count;
 	int note_count;
@@ -55,7 +51,7 @@ public class AttributeView extends View {
 	boolean has_maps;
 	float scale = 1.f;
 
-	private VersesView.AttributeListener attributeListener;
+	private VersesController.AttributeListener attributeListener;
 	private Version version;
 	private String versionId;
 	private int ari;
@@ -118,65 +114,45 @@ public class AttributeView extends View {
 		return bookmark_count > 0 || note_count > 0 || (progress_mark_bits & PROGRESS_MARK_BIT_MASK) != 0 || has_maps;
 	}
 
-	static Bitmap scale(Bitmap original, float scale) {
-		if (BuildConfig.DEBUG) {
-			AppLog.d(TAG, "@@scale Scale needed. Called with scale=" + scale);
+	/**
+	 * Rasterizes the vector icon at its intrinsic size times {@code scale}, instead of scaling a
+	 * pre-rendered bitmap, so the icon stays sharp at every verse text size.
+	 */
+	public static Bitmap renderScaledIcon(final Context context, @DrawableRes final int resId, final float scale) {
+		final Drawable drawable = Objects.requireNonNull(AppCompatResources.getDrawable(context, resId));
+		final int width = Math.max(1, Math.round(drawable.getIntrinsicWidth() * scale));
+		final int height = Math.max(1, Math.round(drawable.getIntrinsicHeight() * scale));
+		return DrawableKt.toBitmap(drawable, width, height, null);
+	}
+
+	Bitmap getScaledIconBitmap(@DrawableRes final int resId) {
+		if (scaledIconBitmapsScale != scale) {
+			scaledIconBitmaps.clear();
+			scaledIconBitmapsScale = scale;
 		}
 
-		if (scale == 1.f) {
-			return Bitmap.createBitmap(original);
+		Bitmap res = scaledIconBitmaps.get(resId);
+		if (res == null) {
+			res = renderScaledIcon(getContext(), resId, scale);
+			scaledIconBitmaps.put(resId, res);
 		}
-
-		final boolean filter = !(scale == 2.f || scale == 3.f || scale == 4.f);
-		return Bitmap.createScaledBitmap(original, Math.round(original.getWidth() * scale), Math.round(original.getHeight() * scale), filter);
+		return res;
 	}
 
 	Bitmap getScaledBookmarkBitmap() {
-		if (originalBookmarkBitmap == null) {
-			originalBookmarkBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.ic_attr_bookmark);
-		}
-
-		if (scaledBookmarkBitmap == null || scaledBookmarkBitmap.getWidth() != Math.round(originalBookmarkBitmap.getWidth() * scale)) {
-			scaledBookmarkBitmap = scale(originalBookmarkBitmap, scale);
-		}
-
-		return scaledBookmarkBitmap;
+		return getScaledIconBitmap(R.drawable.ic_attr_bookmark);
 	}
 
 	Bitmap getScaledNoteBitmap() {
-		if (originalNoteBitmap == null) {
-			originalNoteBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.ic_attr_note);
-		}
-
-		if (scaledNoteBitmap == null || scaledNoteBitmap.getWidth() != Math.round(originalNoteBitmap.getWidth() * scale)) {
-			scaledNoteBitmap = scale(originalNoteBitmap, scale);
-		}
-
-		return scaledNoteBitmap;
+		return getScaledIconBitmap(R.drawable.ic_attr_note);
 	}
 
 	Bitmap getScaledProgressMarkBitmapByPresetId(int preset_id) {
-		if (originalProgressMarkBitmaps[preset_id] == null) {
-			originalProgressMarkBitmaps[preset_id] = BitmapFactory.decodeResource(getResources(), getProgressMarkIconResource(preset_id));
-		}
-
-		if (scaledProgressMarkBitmaps[preset_id] == null || scaledProgressMarkBitmaps[preset_id].getWidth() != Math.round(originalProgressMarkBitmaps[preset_id].getWidth() * scale)) {
-			scaledProgressMarkBitmaps[preset_id] = scale(originalProgressMarkBitmaps[preset_id], scale);
-		}
-
-		return scaledProgressMarkBitmaps[preset_id];
+		return getScaledIconBitmap(getProgressMarkIconResource(preset_id));
 	}
 
 	Bitmap getScaledHasMapsBitmap() {
-		if (originalHasMapsBitmap == null) {
-			originalHasMapsBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.ic_attr_has_maps);
-		}
-
-		if (scaledHasMapsBitmap == null || scaledHasMapsBitmap.getWidth() != Math.round(originalHasMapsBitmap.getWidth() * scale)) {
-			scaledHasMapsBitmap = scale(originalHasMapsBitmap, scale);
-		}
-
-		return scaledHasMapsBitmap;
+		return getScaledIconBitmap(R.drawable.ic_attr_has_maps);
 	}
 
 	@Override
@@ -216,7 +192,7 @@ public class AttributeView extends View {
 	}
 
 	@Override
-	protected void onDraw(final Canvas canvas) {
+	protected void onDraw(@NonNull final Canvas canvas) {
 		int totalHeight = 0;
 
 		final int drawOffsetLeft = Math.round(0.5f * density * scale);
@@ -226,7 +202,7 @@ public class AttributeView extends View {
 			canvas.drawBitmap(b, drawOffsetLeft, totalHeight, null);
 			if (bookmark_count > 1) {
 				bookmarkCountPaint.setTextSize(COUNT_TEXT_SIZE_DP * density * scale);
-				canvas.drawText(String.valueOf(bookmark_count), drawOffsetLeft + b.getWidth() / 2, totalHeight + b.getHeight() * 3 / 4, bookmarkCountPaint);
+				canvas.drawText(String.valueOf(bookmark_count), drawOffsetLeft + b.getWidth() / 2f, totalHeight + b.getHeight() * 3 / 4f, bookmarkCountPaint);
 			}
 			totalHeight += b.getHeight();
 		}
@@ -235,7 +211,7 @@ public class AttributeView extends View {
 			canvas.drawBitmap(b, drawOffsetLeft, totalHeight, null);
 			if (note_count > 1) {
 				noteCountPaint.setTextSize(COUNT_TEXT_SIZE_DP * density * scale);
-				canvas.drawText(String.valueOf(note_count), drawOffsetLeft + b.getWidth() / 2, totalHeight + b.getHeight() * 7 / 10, noteCountPaint);
+				canvas.drawText(String.valueOf(note_count), drawOffsetLeft + b.getWidth() / 2f, totalHeight + b.getHeight() * 7f / 10, noteCountPaint);
 			}
 			totalHeight += b.getHeight();
 		}
@@ -258,53 +234,56 @@ public class AttributeView extends View {
 
 	@Override
 	public boolean onTouchEvent(final MotionEvent event) {
-		final int action = MotionEventCompat.getActionMasked(event);
-		if (action == MotionEvent.ACTION_UP) {
-			int totalHeight = 0;
-			final float y = event.getY();
-			if (bookmark_count > 0) {
-				final Bitmap b = getScaledBookmarkBitmap();
-				totalHeight += b.getHeight();
-				if (totalHeight > y) {
-					attributeListener.onBookmarkAttributeClick(version, versionId, ari);
-					return true;
-				}
+		final int action = event.getActionMasked();
+        switch (action) {
+            case MotionEvent.ACTION_UP -> {
+                int totalHeight = 0;
+                final float y = event.getY();
+                if (bookmark_count > 0) {
+                    final Bitmap b = getScaledBookmarkBitmap();
+                    totalHeight += b.getHeight();
+                    if (totalHeight > y) {
+                        attributeListener.onBookmarkAttributeClick(version, versionId, ari);
+                        return true;
+                    }
+                }
+                if (note_count > 0) {
+                    final Bitmap b = getScaledNoteBitmap();
+                    totalHeight += b.getHeight();
+                    if (totalHeight > y) {
+                        attributeListener.onNoteAttributeClick(version, versionId, ari);
+                        return true;
+                    }
+                }
+                if (progress_mark_bits != 0) {
+                    for (int preset_id = 0; preset_id < PROGRESS_MARK_TOTAL_COUNT; preset_id++) {
+                        if (isProgressMarkSetFromAttribute(preset_id)) {
+                            final Bitmap b = getScaledProgressMarkBitmapByPresetId(preset_id);
+                            totalHeight += b.getHeight();
+                            if (totalHeight > y) {
+                                attributeListener.onProgressMarkAttributeClick(version, versionId, preset_id);
+                                return true;
+                            }
+                        }
+                    }
+                }
+                if (has_maps) {
+                    final Bitmap b = getScaledHasMapsBitmap();
+                    totalHeight += b.getHeight();
+                    if (totalHeight > y) {
+                        attributeListener.onHasMapsAttributeClick(version, versionId, ari);
+                        return true;
+                    }
+                }
+            }
+			case MotionEvent.ACTION_DOWN -> {
+				return true;
 			}
-			if (note_count > 0) {
-				final Bitmap b = getScaledNoteBitmap();
-				totalHeight += b.getHeight();
-				if (totalHeight > y) {
-					attributeListener.onNoteAttributeClick(version, versionId, ari);
-					return true;
-				}
-			}
-			if (progress_mark_bits != 0) {
-				for (int preset_id = 0; preset_id < PROGRESS_MARK_TOTAL_COUNT; preset_id++) {
-					if (isProgressMarkSetFromAttribute(preset_id)) {
-						final Bitmap b = getScaledProgressMarkBitmapByPresetId(preset_id);
-						totalHeight += b.getHeight();
-						if (totalHeight > y) {
-							attributeListener.onProgressMarkAttributeClick(version, versionId, preset_id);
-							return true;
-						}
-					}
-				}
-			}
-			if (has_maps) {
-				final Bitmap b = getScaledHasMapsBitmap();
-				totalHeight += b.getHeight();
-				if (totalHeight > y) {
-					attributeListener.onHasMapsAttributeClick(version, versionId, ari);
-					return true;
-				}
-			}
-		} else if (action == MotionEvent.ACTION_DOWN) {
-			return true;
-		}
+        }
 		return false;
 	}
 
-	public void setAttributeListener(VersesView.AttributeListener attributeListener, final Version version, final String versionId, int ari) {
+	public void setAttributeListener(VersesController.AttributeListener attributeListener, final Version version, final String versionId, int ari) {
 		this.attributeListener = attributeListener;
 		this.version = version;
 		this.versionId = versionId;
@@ -312,34 +291,24 @@ public class AttributeView extends View {
 	}
 
 	public static int getDefaultProgressMarkStringResource(int preset_id) {
-		switch (preset_id) {
-			case 0:
-				return R.string.pm_progress_1;
-			case 1:
-				return R.string.pm_progress_2;
-			case 2:
-				return R.string.pm_progress_3;
-			case 3:
-				return R.string.pm_progress_4;
-			case 4:
-				return R.string.pm_progress_5;
-		}
-		return 0;
-	}
+        return switch (preset_id) {
+            case 0 -> R.string.pm_progress_1;
+            case 1 -> R.string.pm_progress_2;
+            case 2 -> R.string.pm_progress_3;
+            case 3 -> R.string.pm_progress_4;
+            case 4 -> R.string.pm_progress_5;
+            default -> 0;
+        };
+    }
 
 	public static int getProgressMarkIconResource(int preset_id) {
-		switch (preset_id) {
-			case 0:
-				return R.drawable.ic_attr_progress_mark_1;
-			case 1:
-				return R.drawable.ic_attr_progress_mark_2;
-			case 2:
-				return R.drawable.ic_attr_progress_mark_3;
-			case 3:
-				return R.drawable.ic_attr_progress_mark_4;
-			case 4:
-				return R.drawable.ic_attr_progress_mark_5;
-		}
-		return 0;
-	}
+        return switch (preset_id) {
+            case 0 -> R.drawable.ic_attr_progress_mark_1;
+            case 1 -> R.drawable.ic_attr_progress_mark_2;
+            case 2 -> R.drawable.ic_attr_progress_mark_3;
+            case 3 -> R.drawable.ic_attr_progress_mark_4;
+            case 4 -> R.drawable.ic_attr_progress_mark_5;
+            default -> 0;
+        };
+    }
 }

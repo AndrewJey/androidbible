@@ -6,6 +6,7 @@
 	<bool name="pref_keepScreenOn_default">true</bool>
 	<bool name="pref_textPadding_default">true</bool>
 	<bool name="pref_bottomToolbarOnText_default">false</bool>
+	<bool name="pref_verseNumberIsShown_default">true</bool>
 
 	<string name="pref_volumeButtonNavigation_default" translatable="false">default</string>
 
@@ -28,6 +29,6 @@
 	<!-- Light Blue 800 -->
 	<integer name="pref_selectedVerseBgColor_default">0xff0277BD</integer>
 
-	<string name="pref_forceFontScale_default">off</string>
+	<string name="pref_forceFontScale_default" translatable="false">off</string>
 
 </resources>

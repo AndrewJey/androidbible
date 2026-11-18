@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
 	xmlns:tools="http://schemas.android.com/tools"
-	android:layout_width="fill_parent"
-	android:layout_height="fill_parent"
+	android:layout_width="match_parent"
+	android:layout_height="match_parent"
 	android:orientation="vertical">
 
-	<android.support.v7.widget.Toolbar
+	<androidx.appcompat.widget.Toolbar
 		android:id="@+id/toolbar"
+		android:theme="@style/ThemeOverlay.Alkitab.Toolbar"
 		android:layout_width="match_parent"
 		android:layout_height="?attr/actionBarSize"
 		android:background="?attr/colorPrimary" />
 
 	<FrameLayout
-		android:layout_width="fill_parent"
-		android:layout_height="fill_parent">
+		android:layout_width="match_parent"
+		android:layout_height="match_parent">
 
 		<LinearLayout
 			android:layout_width="match_parent"
@@ -28,8 +28,8 @@
 				android:id="@+id/llNavigations"
 				android:layout_width="match_parent"
 				android:layout_height="?android:actionBarSize"
-				android:paddingLeft="@dimen/reading_plan_day_heading_side_padding"
-				android:paddingRight="@dimen/reading_plan_day_heading_side_padding">
+				android:paddingStart="@dimen/reading_plan_day_heading_side_padding"
+				android:paddingEnd="@dimen/reading_plan_day_heading_side_padding">
 
 				<ImageButton
 					android:id="@+id/bLeft"
@@ -39,7 +39,7 @@
 					android:contentDescription="@string/rp_navigationPreviousDay"
 					android:padding="16dp"
 					android:scaleType="center"
-					android:src="@drawable/ic_nav_left_light_disableable" />
+					android:src="@drawable/ic_nav_start_light_disableable" />
 
 				<TextView
 					android:id="@+id/bToday"
@@ -61,7 +61,7 @@
 					android:contentDescription="@string/rp_navigationNextDay"
 					android:padding="16dp"
 					android:scaleType="center"
-					android:src="@drawable/ic_nav_right_light_disableable" />
+					android:src="@drawable/ic_nav_end_light_disableable" />
 			</LinearLayout>
 
 			<ListView
@@ -74,8 +74,8 @@
 
 		<FrameLayout
 			android:id="@+id/flNoDataContainer"
-			android:layout_width="fill_parent"
-			android:layout_height="fill_parent"
+			android:layout_width="match_parent"
+			android:layout_height="match_parent"
 			android:visibility="gone">
 
 			<Button

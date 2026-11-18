@@ -1,0 +1,223 @@
+package yuku.alkitab.base.compose.goto
+
+import android.graphics.Typeface
+import android.text.Spanned
+import android.text.TextUtils
+import android.text.style.StyleSpan
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import java.util.regex.Pattern
+import yuku.alkitab.base.App
+import yuku.alkitab.base.util.Jumper
+import yuku.alkitab.debug.R
+import yuku.alkitab.model.Book
+
+private val NOBOOK_PATTERN: Pattern = Pattern.compile("(\\d+)(?:[ :.]+(\\d+))?")
+
+@Composable
+fun DirectTab(
+    initialBookId: Int,
+    initialChapter_1: Int,
+    initialVerse_1: Int,
+    isActive: Boolean,
+    onGotoFinished: OnGotoFinished,
+) {
+    val resources = LocalResources.current
+    val inInspection = LocalInspectionMode.current
+    val books = remember(inInspection) {
+        if (inInspection) previewDirectBooks() else App.services.versions.activeVersion().consecutiveBooks
+    }
+    var query by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(""))
+    }
+    val candidates by remember(books) {
+        derivedStateOf { computeCandidates(query.text, books) }
+    }
+    var errorRef by remember { mutableStateOf<String?>(null) }
+    val focusRequester = remember { FocusRequester() }
+    val kbd = LocalSoftwareKeyboardController.current
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            if (listState.firstVisibleItemIndex > 1) listState.scrollToItem(1)
+            focusRequester.requestFocus()
+            kbd?.show()
+        }
+    }
+
+    val sample = remember(initialBookId, initialChapter_1, initialVerse_1, inInspection) {
+        if (inInspection) {
+            "Gen $initialChapter_1:$initialVerse_1"
+        } else {
+            App.services.versions.activeVersion().reference(initialBookId, initialChapter_1, initialVerse_1)
+        }
+    }
+    val prompt = TextUtils.expandTemplate(resources.getText(R.string.jump_to_prompt), sample)
+        .toAnnotatedString()
+
+    fun submit() {
+        val ref = query.text.trim()
+        if (ref.isEmpty()) return
+
+        val m = NOBOOK_PATTERN.matcher(ref)
+        if (m.matches()) {
+            val ch = m.group(1)?.toIntOrNull()
+            if (ch != null) {
+                val v = m.group(2)?.toIntOrNull() ?: 0
+                onGotoFinished(GotoTab.DIRECT, initialBookId, ch, v)
+                return
+            }
+        }
+        val jumper = Jumper(ref)
+        if (!jumper.parseSucceeded) {
+            errorRef = ref
+            return
+        }
+        onGotoFinished(GotoTab.DIRECT, jumper.getBookId(books), jumper.chapter, jumper.verse)
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().imePadding(),
+        state = listState,
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        item(key = "prompt") {
+            Text(text = prompt)
+            Spacer(Modifier.size(16.dp))
+        }
+
+        item(key = "input") {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusProperties { canFocus = isActive }
+                    .focusRequester(focusRequester),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { submit() }),
+                trailingIcon = {
+                    IconButton(onClick = ::submit) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = stringResource(R.string.ok),
+                        )
+                    }
+                },
+            )
+        }
+
+        items(candidates, key = { it.title }) { c ->
+            ListItem(
+                headlineContent = { Text(c.title, style = MaterialTheme.typography.titleMedium) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val newText = if (c.bookOnly) c.title + " " else c.title
+                        query = TextFieldValue(
+                            text = newText,
+                            selection = TextRange(newText.length),
+                        )
+                        if (c.hasVerse) submit()
+                    },
+            )
+        }
+    }
+
+    errorRef?.let { ref ->
+        AlertDialog(
+            onDismissRequest = { errorRef = null },
+            confirmButton = {
+                TextButton(onClick = { errorRef = null }) { Text(stringResource(R.string.ok)) }
+            },
+            text = { Text(stringResource(R.string.alamat_tidak_sah_alamat, ref)) },
+        )
+    }
+}
+
+private fun CharSequence.toAnnotatedString(): AnnotatedString = buildAnnotatedString {
+    append(this@toAnnotatedString.toString())
+    if (this@toAnnotatedString is Spanned) {
+        for (span in getSpans(0, length, StyleSpan::class.java)) {
+            if (span.style == Typeface.BOLD) {
+                addStyle(SpanStyle(fontWeight = FontWeight.Bold), getSpanStart(span), getSpanEnd(span))
+            }
+        }
+    }
+}
+
+private fun previewDirectBooks(): Array<Book> = arrayOf(
+    Book().apply {
+        bookId = 0
+        shortName = "Gen"
+        chapter_count = 50
+        verse_counts = IntArray(50) { 30 }
+        abbreviation = "Gen"
+    },
+    Book().apply {
+        bookId = 42
+        shortName = "John"
+        chapter_count = 21
+        verse_counts = IntArray(21) { 30 }
+        abbreviation = "Jn"
+    },
+)
+
+@Preview(showBackground = true, widthDp = 400, heightDp = 700)
+@Composable
+private fun DirectTabPreview() {
+    DirectTab(
+        initialBookId = 0,
+        initialChapter_1 = 1,
+        initialVerse_1 = 1,
+        isActive = false,
+        onGotoFinished = { _, _, _, _ -> },
+    )
+}

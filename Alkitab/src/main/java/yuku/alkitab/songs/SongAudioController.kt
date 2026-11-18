@@ -1,0 +1,189 @@
+package yuku.alkitab.songs
+
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.IBinder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import yuku.alkitab.base.audio.AudioService
+import yuku.alkitab.base.util.AppLog
+
+private const val TAG = "SongAudioController"
+
+/**
+ * Activity-facing [MediaController] that drives [SongAudioPlayback] in [AudioService].
+ * Binds with `startService` + [AudioService.ACTION_LOCAL_BIND]
+ * using the application context, so the service outlives the activity and keeps
+ * playing in the background with its media notification.
+ *
+ * Maps the service's [SongPlaybackState] onto [MediaController.State] for the
+ * song media sheet and activity. Format selection (MP3 or MIDI) belongs to the
+ * service.
+ */
+class SongAudioController(private val appContext: Context) : MediaController() {
+
+    private val scope = CoroutineScope(Dispatchers.Main.immediate)
+    private var collectJob: Job? = null
+    private var service: SongAudioPlayback? = null
+    private var bound = false
+
+    private val _playbackState = MutableStateFlow(SongPlaybackState.IDLE)
+    val playbackState = _playbackState.asStateFlow()
+
+    var isLooping = false
+        private set
+
+    private var displayTitle = ""
+    private var displaySubtitle = ""
+    private var pendingRequest: SongAudioPlayback.SongRequest? = null
+    private var selectedSong: Pair<String?, String?>? = null
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val svc = (binder as? AudioService.LocalBinder)?.service?.song ?: return
+            service = svc
+            collectJob?.cancel()
+            collectJob = scope.launch {
+                svc.playbackState.collect { mapState(it) }
+            }
+            pendingRequest?.let { req ->
+                svc.load(req)
+                pendingRequest = null
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            service = null
+            collectJob?.cancel()
+            collectJob = null
+        }
+    }
+
+    fun selectSong(bookName: String?, code: String?) {
+        val selection = bookName to code
+        if (selectedSong == selection) return
+        selectedSong = selection
+        reset()
+    }
+
+    /** Title / subtitle shown on the media notification for the next [load]. */
+    fun setDisplayInfo(title: String, subtitle: String) {
+        displayTitle = title
+        displaySubtitle = subtitle
+    }
+
+    override fun reset() {
+        super.reset()
+        _playbackState.value = SongPlaybackState.IDLE
+        isLooping = false
+        service?.stop()
+        unbind()
+    }
+
+    override fun playOrPause(playInLoop: Boolean) {
+        isLooping = playInLoop
+        when (state) {
+            State.reset -> Unit
+
+            State.reset_media_known_to_exist, State.complete, State.error -> {
+                val url = url ?: return
+                state = State.preparing
+                ensureBound()
+                val request = SongAudioPlayback.SongRequest(
+                    url = url,
+                    displayTitle = displayTitle,
+                    displaySubtitle = displaySubtitle,
+                    loop = playInLoop,
+                )
+                service?.load(request) ?: run { pendingRequest = request }
+            }
+
+            State.preparing -> Unit
+
+            State.playing -> {
+                service?.pause()
+            }
+
+            State.paused -> {
+                service?.setLoop(playInLoop)
+                service?.play()
+            }
+        }
+    }
+
+    fun isCurrentUrl(candidate: String): Boolean = url == candidate && state != State.reset
+
+    fun pause() {
+        pendingRequest = null
+        service?.pause()
+    }
+
+    fun seekTo(positionMs: Long) {
+        service?.seekTo(positionMs)
+    }
+
+    fun setLoop(isLooping: Boolean) {
+        this.isLooping = isLooping
+        service?.setLoop(isLooping)
+        pendingRequest = pendingRequest?.copy(loop = isLooping)
+    }
+
+    override fun getProgress(): LongArray {
+        val svc = service ?: return longArrayOf(-1, -1)
+        return when (state) {
+            State.preparing, State.playing, State.paused, State.complete -> longArrayOf(svc.currentPositionMs, svc.durationMs)
+            else -> longArrayOf(-1, -1)
+        }
+    }
+
+    private fun mapState(s: SongPlaybackState) {
+        _playbackState.value = s
+        state = when {
+            s.error != null -> State.error
+            s.preparing -> State.preparing
+            s.isPlaying -> State.playing
+            s.ended -> State.complete
+            s.hasMedia -> State.paused
+            else -> State.reset_media_known_to_exist
+        }
+    }
+
+    private fun ensureBound() {
+        if (bound) return
+        val startIntent = Intent(appContext, AudioService::class.java)
+        appContext.startService(startIntent)
+        val bindIntent = Intent(appContext, AudioService::class.java)
+            .setAction(AudioService.ACTION_LOCAL_BIND)
+        try {
+            if (appContext.bindService(bindIntent, connection, Context.BIND_AUTO_CREATE)) {
+                bound = true
+            } else {
+                AppLog.w(TAG, "bindService returned false — service not bound")
+            }
+        } catch (e: SecurityException) {
+            AppLog.e(TAG, "bindService denied: ${e.message}")
+        }
+    }
+
+    private fun unbind() {
+        if (bound) {
+            try {
+                appContext.unbindService(connection)
+            } catch (e: IllegalArgumentException) {
+                AppLog.w(TAG, "unbindService: ${e.message}")
+            }
+            bound = false
+        }
+        service = null
+        pendingRequest = null
+        collectJob?.cancel()
+        collectJob = null
+    }
+}

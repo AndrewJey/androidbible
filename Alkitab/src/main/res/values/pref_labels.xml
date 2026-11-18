@@ -7,6 +7,7 @@
     <string name="pref_redTextColor_title">Words of Jesus</string>
     <string name="pref_penggunaan">Usage</string>
     <string name="pref_copy_share">Copying and sharing</string>
+    <string name="pref_data_transfer">Data transfer</string>
     <string name="pref_tampilkan_kitab_dalam_urutan_abjad_bukan_urutan_aslinya">List books in alphabetical order (a-z) instead of the original</string>
     <string name="pref_kitab_menurut_abjad">Sort books alphabetically</string>
     <string name="pref_layar_tidak_akan_padam_ketika_membaca_teks_alkitab">Device screen will not turn off when reading the Bible</string>
@@ -26,4 +27,21 @@
     <string name="pref_showHiddenVersion_title">Enable possibly restricted versions</string>
     <string name="pref_selectedVerseBgColor_title">Selected verse background</string>
     <string name="pref_forceFontScale_title">UI text size</string>
+    <string name="pref_data_transfer_export_title">Export data</string>
+    <string name="pref_data_transfer_import_title">Import data</string>
+
+    <string name="pref_experimental">Experimental features</string>
+    <string name="pref_experimental_warning">May be unstable. Disable if you hit issues.</string>
+    <string name="pref_debugRubyGeometry_title">Debug ruby geometry</string>
+    <string name="pref_debugRubyGeometry_summary">Draw boxes around each line, base text, and ruby pronunciation text on screen. Write the measurements to the system log with the tag RubyGeom. Tap a verse to copy its measurements to the clipboard. For debugging ruby text placement only; keep this option disabled.</string>
+    <string name="pref_useLegacyVerseItem_title">Verse (legacy views)</string>
+    <string name="pref_useLegacyVerseItem_summary">Show the Bible text with the legacy view-based verse list instead of the fully Jetpack Compose-based one. Takes effect when the reader screen is reopened.</string>
+    <string name="pref_useLegacyGoto_title">Navigation (legacy views)</string>
+    <string name="pref_useLegacyGoto_summary">Show the legacy tab-based Navigation screen instead of the Jetpack Compose one.</string>
+    <string name="pref_useLegacyToolbar_title">Reader toolbar (legacy views)</string>
+    <string name="pref_useLegacyToolbar_summary">Draw the reading screen toolbar with the legacy view instead of Jetpack Compose. Takes effect after the reading screen is reopened.</string>
+    <string name="pref_useLegacySong_title">Song lyrics (legacy views)</string>
+    <string name="pref_useLegacySong_summary">Render song lyrics with the legacy WebView (HTML/CSS) instead of natively with Jetpack Compose. Open a song to see the change.</string>
+    <string name="pref_useLegacySyncLogin_title">Sync sign-in (legacy views)</string>
+    <string name="pref_useLegacySyncLogin_summary">Show the legacy sync sign-in screen instead of the Jetpack Compose one, which has a show/hide password toggle and an inline confirm-password field.</string>
 </resources>

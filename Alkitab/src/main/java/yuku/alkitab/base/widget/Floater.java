@@ -4,17 +4,16 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Typeface;
-import android.support.v4.content.res.ResourcesCompat;
 import android.util.AttributeSet;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
+import androidx.annotation.NonNull;
+import androidx.core.content.res.ResourcesCompat;
 import yuku.alkitab.debug.R;
 import yuku.alkitab.model.Book;
-import yuku.alkitab.model.Version;
 import yuku.alkitab.util.Ari;
 
 public class Floater extends View {
-	public static final String TAG = Floater.class.getSimpleName();
 	public static final int LONG_PRESS_DELAY_MILLIS = 650;
 	private int currentBookId;
 	private int currentChapter_1;
@@ -274,8 +273,8 @@ public class Floater extends View {
 		canvas.drawText(text, left, bottom, activePaint);
 	}
 
-	public void onDragStart(final Version version) {
-		this.books = version.getConsecutiveBooks();
+	public void onDragStart(@NonNull final Book[] books) {
+		this.books = books;
 		this.state = State.selectBook;
 		this.activeBookIndex = -1;
 		this.activeChapterIndex = -1;

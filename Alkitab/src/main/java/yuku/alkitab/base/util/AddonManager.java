@@ -1,15 +1,12 @@
 package yuku.alkitab.base.util;
 
 import android.os.Environment;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import java.io.File;
 import yuku.alkitab.base.App;
 
-import java.io.File;
-
 public class AddonManager {
-	public static final String TAG = AddonManager.class.getSimpleName();
-
 	private static File getYesDir() {
 		final File res = new File(App.context.getFilesDir(), "bible/yes");
 		if (!res.exists()) {
@@ -24,10 +21,6 @@ public class AddonManager {
 			res.mkdirs();
 		}
 		return res;
-	}
-
-	public static boolean isInSharedStorage(@NonNull String filename) {
-		return !filename.startsWith(App.context.getFilesDir().getAbsolutePath());
 	}
 
 	/**

@@ -1,22 +1,23 @@
 package yuku.alkitab.base.config;
 
-import android.support.v4.util.AtomicFile;
+import androidx.annotation.Keep;
+import androidx.core.util.AtomicFile;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import yuku.afw.storage.Preferences;
 import yuku.alkitab.base.App;
 import yuku.alkitab.base.model.MVersionPreset;
 import yuku.alkitab.base.storage.Prefkey;
 import yuku.alkitab.base.util.AppLog;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
 public class VersionConfig {
-	public static final String TAG = VersionConfig.class.getSimpleName();
+	static final String TAG = VersionConfig.class.getSimpleName();
 
 	public List<MVersionPreset> presets;
 	public Map<String, String> locale_display;
@@ -27,6 +28,7 @@ public class VersionConfig {
 	private VersionConfig() {
 	}
 
+	@Keep
 	static class PresetJson {
 		public String locale;
 		public String shortName;
@@ -37,9 +39,9 @@ public class VersionConfig {
 		public int group_order;
 	}
 
+	@Keep
 	static class VersionConfigJson {
 		public List<PresetJson> presets;
-		public String download_url_format;
 		public Map<String, String> locale_display;
 		public Map<String, String> group_order_display;
 	}
@@ -60,7 +62,7 @@ public class VersionConfig {
 		if (updatedFile.exists() && updatedFile.canRead() && updatedFile.length() > 0) {
 			try {
 				final AtomicFile file = new AtomicFile(updatedFile);
-				final String json = new String(file.readFully(), "utf-8");
+				final String json = new String(file.readFully(), StandardCharsets.UTF_8);
 				final VersionConfigJson obj = App.getDefaultGson().fromJson(json, VersionConfigJson.class);
 				return convertConfig(obj);
 			} catch (Exception e) {
@@ -72,7 +74,7 @@ public class VersionConfig {
 		}
 
 		try {
-			final InputStreamReader reader = new InputStreamReader(App.context.getAssets().open("version_config.json"), "utf-8");
+			final InputStreamReader reader = new InputStreamReader(App.context.getAssets().open("version_config.json"), StandardCharsets.UTF_8);
 			final VersionConfigJson obj = App.getDefaultGson().fromJson(reader, VersionConfigJson.class);
 			reader.close();
 
@@ -133,7 +135,6 @@ public class VersionConfig {
 			preset.preset_name = presetJson.preset_name;
 			preset.modifyTime = presetJson.modifyTime;
 			preset.group_order = presetJson.group_order;
-			preset.download_url = root.download_url_format.replace("$PRESET_NAME", presetJson.preset_name);
 			preset.ordering = ++presetOrdering;
 			presets.add(preset);
 		}
@@ -166,7 +167,7 @@ public class VersionConfig {
 		try {
 			final AtomicFile file = new AtomicFile(getUpdatedFile());
 			final FileOutputStream fos = file.startWrite();
-			fos.write(json.getBytes("utf-8"));
+			fos.write(json.getBytes(StandardCharsets.UTF_8));
 			file.finishWrite(fos);
 		} catch (IOException e) {
 			AppLog.d(TAG, "Failed to write to update file", e);

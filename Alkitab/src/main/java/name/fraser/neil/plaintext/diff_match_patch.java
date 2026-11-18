@@ -20,8 +20,9 @@
 package name.fraser.neil.plaintext;
 
 import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -83,7 +84,7 @@ public class diff_match_patch {
   /**
    * The number of bits in an int.
    */
-  private short Match_MaxBits = 32;
+  private final short Match_MaxBits = 32;
 
   /**
    * Internal class for returning results from diff_linesToChars().
@@ -549,11 +550,11 @@ public class diff_match_patch {
       lineStart = lineEnd + 1;
 
       if (lineHash.containsKey(line)) {
-        chars.append(String.valueOf((char) (int) lineHash.get(line)));
+        chars.append((char) (int) lineHash.get(line));
       } else {
         lineArray.add(line);
         lineHash.put(line, lineArray.size() - 1);
-        chars.append(String.valueOf((char) (lineArray.size() - 1)));
+        chars.append((char) (lineArray.size() - 1));
       }
     }
     return chars.toString();
@@ -1031,9 +1032,9 @@ public class diff_match_patch {
   }
 
   // Define some regex patterns for matching boundaries.
-  private Pattern BLANKLINEEND
+  private final Pattern BLANKLINEEND
       = Pattern.compile("\\n\\r?\\n\\Z", Pattern.DOTALL);
-  private Pattern BLANKLINESTART
+  private final Pattern BLANKLINESTART
       = Pattern.compile("\\A\\r?\\n\\r?\\n", Pattern.DOTALL);
 
   /**
@@ -1432,13 +1433,8 @@ public class diff_match_patch {
     for (Diff aDiff : diffs) {
       switch (aDiff.operation) {
       case INSERT:
-        try {
-          text.append("+").append(URLEncoder.encode(aDiff.text, "UTF-8")
-                                            .replace('+', ' ')).append("\t");
-        } catch (UnsupportedEncodingException e) {
-          // Not likely on modern system.
-          throw new Error("This system does not support UTF-8.", e);
-        }
+        text.append("+").append(encodeUtf8(aDiff.text)
+                                          .replace('+', ' ')).append("\t");
         break;
       case DELETE:
         text.append("-").append(aDiff.text.length()).append("\t");
@@ -1483,10 +1479,7 @@ public class diff_match_patch {
         // decode would change all "+" to " "
         param = param.replace("+", "%2B");
         try {
-          param = URLDecoder.decode(param, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-          // Not likely on modern system.
-          throw new Error("This system does not support UTF-8.", e);
+          param = decodeUtf8(param);
         } catch (IllegalArgumentException e) {
           // Malformed URI sequence.
           throw new IllegalArgumentException(
@@ -1561,7 +1554,7 @@ public class diff_match_patch {
       // Nothing to match.
       return -1;
     } else if (loc + pattern.length() <= text.length()
-        && text.substring(loc, loc + pattern.length()).equals(pattern)) {
+        && text.startsWith(pattern, loc)) {
       // Perfect match at the perfect spot!  (Includes case of null pattern)
       return loc;
     } else {
@@ -1803,6 +1796,7 @@ public class diff_match_patch {
    * @return LinkedList of Patch objects.
    * @deprecated Prefer patch_make(String text1, LinkedList<Diff> diffs).
    */
+  @Deprecated
   public LinkedList<Patch> patch_make(String text1, String text2,
       LinkedList<Diff> diffs) {
     return patch_make(text1, diffs);
@@ -2269,10 +2263,7 @@ public class diff_match_patch {
         line = text.getFirst().substring(1);
         line = line.replace("+", "%2B");  // decode would change all "+" to " "
         try {
-          line = URLDecoder.decode(line, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-          // Not likely on modern system.
-          throw new Error("This system does not support UTF-8.", e);
+          line = decodeUtf8(line);
         } catch (IllegalArgumentException e) {
           // Malformed URI sequence.
           throw new IllegalArgumentException(
@@ -2369,13 +2360,8 @@ public class diff_match_patch {
         return false;
       }
       if (text == null) {
-        if (other.text != null) {
-          return false;
-        }
-      } else if (!text.equals(other.text)) {
-        return false;
-      }
-      return true;
+          return other.text == null;
+      } else return text.equals(other.text);
     }
   }
 
@@ -2435,15 +2421,26 @@ public class diff_match_patch {
           text.append(' ');
           break;
         }
-        try {
-          text.append(URLEncoder.encode(aDiff.text, "UTF-8").replace('+', ' '))
-              .append("\n");
-        } catch (UnsupportedEncodingException e) {
-          // Not likely on modern system.
-          throw new Error("This system does not support UTF-8.", e);
-        }
+        text.append(encodeUtf8(aDiff.text).replace('+', ' '))
+            .append("\n");
       }
       return unescapeForEncodeUriCompatability(text.toString());
+    }
+  }
+
+  private static String encodeUtf8(String text) {
+    try {
+      return URLEncoder.encode(text, StandardCharsets.UTF_8.name());
+    } catch (UnsupportedEncodingException e) {
+      throw new AssertionError(e);
+    }
+  }
+
+  private static String decodeUtf8(String text) {
+    try {
+      return URLDecoder.decode(text, StandardCharsets.UTF_8.name());
+    } catch (UnsupportedEncodingException e) {
+      throw new AssertionError(e);
     }
   }
 

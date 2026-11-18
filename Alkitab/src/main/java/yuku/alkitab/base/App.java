@@ -1,287 +1,136 @@
 package yuku.alkitab.base;
 
 import android.content.Context;
-import android.graphics.Bitmap;
-import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.multidex.MultiDex;
-import android.support.v4.content.LocalBroadcastManager;
-import android.support.v7.preference.PreferenceManager;
-import android.view.ViewConfiguration;
-import com.crashlytics.android.Crashlytics;
-import com.downloader.PRDownloader;
-import com.downloader.PRDownloaderConfig;
-import com.google.android.gms.analytics.GoogleAnalytics;
-import com.google.android.gms.analytics.HitBuilders;
-import com.google.android.gms.analytics.Tracker;
+import android.net.Uri;
+import androidx.core.app.NotificationChannelCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.preference.PreferenceManager;
 import com.google.gson.Gson;
-import com.jakewharton.picasso.OkHttp3Downloader;
-import com.squareup.leakcanary.LeakCanary;
-import com.squareup.picasso.Picasso;
-import io.fabric.sdk.android.Fabric;
-import okhttp3.Cache;
-import okhttp3.Call;
-import okhttp3.Interceptor;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.internal.Version;
+import java.util.concurrent.atomic.AtomicBoolean;
 import yuku.afw.storage.Preferences;
-import yuku.alkitab.base.model.SyncShadow;
+import yuku.alkitab.base.services.AppServices;
 import yuku.alkitab.base.storage.Prefkey;
-import yuku.alkitab.base.sync.Gcm;
+import yuku.alkitab.base.sync.Fcm;
 import yuku.alkitab.base.sync.Sync;
-import yuku.alkitab.base.util.AppLog;
+import yuku.alkitab.base.util.DownloadMapper;
 import yuku.alkitab.debug.BuildConfig;
 import yuku.alkitab.debug.R;
-import yuku.alkitab.reminder.util.DevotionReminder;
 import yuku.alkitabfeedback.FeedbackSender;
 import yuku.alkitabintegration.display.Launcher;
-import yuku.stethoshim.StethoShim;
-
-import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class App extends yuku.afw.App {
-	public static final String TAG = App.class.getSimpleName();
+    private static final AtomicBoolean initted = new AtomicBoolean(false);
 
-	private static boolean initted = false;
-	private static Tracker APP_TRACKER;
+    /**
+     * App-level service container. Wraps the interfaces implemented by {@link S} so
+     * new code can depend on narrow interfaces (and tests can swap fakes in) without
+     * reaching into the {@link S} service locator directly.
+     *
+     * <p>Initialized eagerly at class-load so call sites can read it before
+     * {@link #staticInit()} has run. The adapter properties on {@link S} are
+     * cheap object literals that only touch context/preferences when their
+     * methods are invoked, so this is safe even from tests that haven't booted
+     * the full {@link App} (e.g. by overriding the Application class in
+     * Robolectric and calling {@code yuku.afw.App.initWithAppContext} directly).
+     */
+    public static AppServices services = new AppServices(S.storage, S.versions, S.uiDimensions);
 
-	static class UserAgentInterceptor implements Interceptor {
-		@Override
-		public Response intercept(final Chain chain) throws IOException {
-			final Request originalRequest = chain.request();
-			final Request requestWithUserAgent = originalRequest.newBuilder()
-				.removeHeader("User-Agent")
-				.addHeader("User-Agent", httpUserAgent())
-				.build();
-			return chain.proceed(requestWithUserAgent);
-		}
-	}
+    enum GsonWrapper {
+        INSTANCE;
 
-	@NonNull
-	static String httpUserAgent() {
-		return Version.userAgent() + " " + App.context.getPackageName() + "/" + App.getVersionName();
-	}
+        final Gson gson = new Gson();
+    }
 
-	enum OkHttpClientWrapper {
-		INSTANCE;
+    @Override
+    public void onCreate() {
+        super.onCreate();
 
-		final OkHttpClient longTimeoutClient;
+        staticInit();
+        DownloadMapper.instance.reconcileOnStartup();
+    }
 
-		{
-			final OkHttpClient.Builder builder = new OkHttpClient.Builder();
-			builder
-				.addNetworkInterceptor(new UserAgentInterceptor())
-				.connectTimeout(300, TimeUnit.SECONDS)
-				.readTimeout(300, TimeUnit.SECONDS)
-				.writeTimeout(600, TimeUnit.SECONDS);
-			StethoShim.addNetworkInterceptor(builder);
-			longTimeoutClient = builder.build();
-		}
-	}
+    /**
+     * {@link yuku.afw.App#context} must have been set via {@link #initWithAppContext(Context)}
+     * before calling this method.
+     */
+    public synchronized static void staticInit() {
+        if (initted.getAndSet(true)) return;
 
-	enum GsonWrapper {
-		INSTANCE;
+        if (context == null) {
+            throw new RuntimeException("yuku.afw.App.context must have been set via initWithAppContext(Context) before calling this method.");
+        }
 
-		Gson gson = new Gson();
-	}
+        FeedbackSender.getInstance(context).trySend();
 
-	public static String downloadString(String url) throws IOException {
-		return downloadCall(url).execute().body().string();
-	}
+        for (final int preferenceResId : new int[]{
+            R.xml.settings_display,
+            R.xml.settings_usage,
+            R.xml.settings_copy_share,
+            R.xml.secret_settings,
+            R.xml.sync_settings,
+        }) {
+            PreferenceManager.setDefaultValues(context, preferenceResId, false);
+        }
 
-	public static byte[] downloadBytes(String url) throws IOException {
-		return downloadCall(url).execute().body().bytes();
-	}
+        // FCM is only useful once the user has signed into sync — the registration id
+        // gets uploaded by Sync.notifyNewFcmRegistrationId, which itself early-exits
+        // when sync_simpleToken is null. Skipping this block on first launch (before
+        // any sync sign-in) keeps Firebase Messaging dormant and avoids prompting the
+        // user for POST_NOTIFICATIONS before they have any reason to grant it. New
+        // sign-ins are handled separately by SyncLoginActivity.gotSimpleToken.
+        if (Preferences.getString(Prefkey.sync_simpleToken) != null) {
+            final String fcmRegistrationId = Fcm.renewFcmRegistrationIdIfNeeded(Sync::notifyNewFcmRegistrationId);
+            if (fcmRegistrationId != null) {
+                Sync.retryPendingFcmRegistrationIfNeeded(fcmRegistrationId);
+            }
+        }
 
-	public static Call downloadCall(String url) {
-		return okhttp().newCall(new Request.Builder().url(url).build());
-	}
+        // make sure launcher do not open other variants of the app
+        Launcher.setAppPackageName(context.getPackageName());
 
-	public static OkHttpClient getLongTimeoutOkHttpClient() {
-		return OkHttpClientWrapper.INSTANCE.longTimeoutClient;
-	}
+        // remove unused notification channels
+        final NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
+        notificationManager.deleteNotificationChannel("devotion_downloader");
+        notificationManager.deleteNotificationChannel("download_mapper");
+        notificationManager.deleteNotificationChannel("devotion_reminder");
 
-	@Override
-	public void onCreate() {
-		super.onCreate();
+        // Bible audio playback channel — created here so that media3's
+        // DefaultMediaNotificationProvider posts onto a low-importance,
+        // silent channel rather than the default high-importance one.
+        // Channel attributes (importance, sound, vibration) are immutable
+        // after first creation, so creating it ourselves up-front is the
+        // only way to control them.
+        notificationManager.createNotificationChannel(
+            new NotificationChannelCompat.Builder("audio_bible", NotificationManagerCompat.IMPORTANCE_LOW)
+                .setName(context.getString(R.string.audio_bible_notification_channel_name))
+                .setVibrationEnabled(false)
+                .setSound(null, null)
+                .build()
+        );
+        notificationManager.createNotificationChannel(
+            new NotificationChannelCompat.Builder("audio_song", NotificationManagerCompat.IMPORTANCE_LOW)
+                .setName(context.getString(R.string.audio_song_notification_channel_name))
+                .setVibrationEnabled(false)
+                .setSound(null, null)
+                .build()
+        );
+    }
 
-		staticInit();
+    public static Gson getDefaultGson() {
+        return GsonWrapper.INSTANCE.gson;
+    }
 
-		{ // LeakCanary, also we need the Application instance.
-			if (LeakCanary.isInAnalyzerProcess(this)) {
-				// This process is dedicated to LeakCanary for heap analysis.
-				// You should not init your app in this process.
-				return;
-			}
-			LeakCanary.install(this);
-		}
+    public static String getAppIdentifierParamsEncoded() {
+        return "app_versionCode=" + App.getVersionCode()
+            + "&app_versionName=" + Uri.encode(App.getVersionName())
+            + "&app_packageName=" + Uri.encode(BuildConfig.APPLICATION_ID);
+    }
 
-		{ // Google Analytics V4
-			// This can't be in staticInit because we need the Application instance.
-			final GoogleAnalytics analytics = GoogleAnalytics.getInstance(context);
-			final Tracker t = analytics.newTracker(context.getString(R.string.ga_trackingId));
-			t.enableAutoActivityTracking(true);
-			t.enableAdvertisingIdCollection(true);
-			APP_TRACKER = t;
-			analytics.enableAutoActivityReports(this);
-		}
+    public static String getVersionName() {
+        return BuildConfig.VERSION_NAME;
+    }
 
-		{ // Stetho call through proxy
-			StethoShim.initializeWithDefaults(this);
-		}
-	}
-
-	/**
-	 * {@link yuku.afw.App#context} must have been set via {@link #initWithAppContext(Context)}
-	 * before calling this method.
-	 */
-	public synchronized static void staticInit() {
-		if (initted) return;
-		initted = true;
-
-		if (context == null) {
-			throw new RuntimeException("yuku.afw.App.context must have been set via initWithAppContext(Context) before calling this method.");
-		}
-
-		Fabric.with(context, new Crashlytics());
-
-		final FeedbackSender fs = FeedbackSender.getInstance(context);
-		fs.trySend();
-
-		for (final int preferenceResId : new int[]{
-			R.xml.settings_display,
-			R.xml.settings_usage,
-			R.xml.settings_copy_share,
-			R.xml.secret_settings,
-			R.xml.sync_settings,
-		}) {
-			PreferenceManager.setDefaultValues(context, preferenceResId, false);
-		}
-
-		{ // GCM
-			Gcm.renewGcmRegistrationIdIfNeeded(Sync::notifyNewGcmRegistrationId);
-		}
-
-		DevotionReminder.scheduleAlarm();
-
-		forceOverflowMenu();
-
-		PRDownloader.initialize(context, new PRDownloaderConfig.Builder()
-			.setUserAgent(httpUserAgent())
-			.build()
-		);
-
-		// make sure launcher do not open other variants of the app
-		Launcher.setAppPackageName(context.getPackageName());
-
-		// sync on app start, if we are logged in
-		if (Preferences.contains(Prefkey.sync_simpleToken)) {
-			Sync.notifySyncNeeded(SyncShadow.ALL_SYNC_SET_NAMES);
-		}
-	}
-
-	private static void forceOverflowMenu() {
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-			return; // no need to do anything, it is already forced on KitKat
-		}
-
-		final ViewConfiguration config = ViewConfiguration.get(context);
-		try {
-			final Field sHasPermanentMenuKey = ViewConfiguration.class.getDeclaredField("sHasPermanentMenuKey");
-			sHasPermanentMenuKey.setAccessible(true);
-			sHasPermanentMenuKey.setBoolean(config, false);
-		} catch (Exception e) {
-			AppLog.w(TAG, "ViewConfiguration has no sHasPermanentMenuKey field", e);
-		}
-
-		try {
-			final Field sHasPermanentMenuKeySet = ViewConfiguration.class.getDeclaredField("sHasPermanentMenuKeySet");
-			sHasPermanentMenuKeySet.setAccessible(true);
-			sHasPermanentMenuKeySet.setBoolean(config, true);
-		} catch (Exception e) {
-			AppLog.w(TAG, "ViewConfiguration has no sHasPermanentMenuKeySet field", e);
-		}
-	}
-
-	public static LocalBroadcastManager getLbm() {
-		return LocalBroadcastManager.getInstance(context);
-	}
-
-	public static Gson getDefaultGson() {
-		return GsonWrapper.INSTANCE.gson;
-	}
-
-	protected void attachBaseContext(Context base) {
-		super.attachBaseContext(base);
-		MultiDex.install(this);
-	}
-
-	public synchronized static Tracker getTracker() {
-		return APP_TRACKER;
-	}
-
-	private static ExecutorService eventSubmitter = Executors.newSingleThreadExecutor();
-
-	public static void trackEvent(final String category) {
-		trackEvent(category, category);
-	}
-
-	public static void trackEvent(final String category, final String action) {
-		final Tracker tracker = getTracker();
-		if (tracker != null) { // guard against wrong initialization order
-			eventSubmitter.submit(() -> tracker.send(new HitBuilders.EventBuilder(category, action).build()));
-		}
-	}
-
-	private static OkHttpClient okhttp;
-
-	@NonNull
-	public static synchronized OkHttpClient okhttp() {
-		OkHttpClient res = okhttp;
-		if (res == null) {
-			final File cacheDir = new File(context.getCacheDir(), "okhttp-cache");
-			if (!cacheDir.exists()) {
-				//noinspection ResultOfMethodCallIgnored
-				cacheDir.mkdirs();
-			}
-
-			final OkHttpClient.Builder builder = new OkHttpClient.Builder()
-				.cache(new Cache(cacheDir, 50 * 1024 * 1024))
-				.connectTimeout(30, TimeUnit.SECONDS)
-				.readTimeout(30, TimeUnit.SECONDS)
-				.writeTimeout(30, TimeUnit.SECONDS)
-				.addNetworkInterceptor(new UserAgentInterceptor());
-
-			if (BuildConfig.DEBUG) {
-				builder.hostnameVerifier((hostname, session) -> true);
-			}
-
-			StethoShim.addNetworkInterceptor(builder);
-
-			okhttp = res = builder.build();
-		}
-		return res;
-	}
-
-	static Picasso picasso;
-
-	@NonNull
-	public static synchronized Picasso picasso() {
-		Picasso res;
-		if (picasso == null) {
-			picasso = res = new Picasso.Builder(context)
-				.defaultBitmapConfig(Bitmap.Config.RGB_565)
-				.downloader(new OkHttp3Downloader(okhttp()))
-				.build();
-			return res;
-		}
-		return picasso;
-	}
+    public static int getVersionCode() {
+        return BuildConfig.VERSION_CODE;
+    }
 }

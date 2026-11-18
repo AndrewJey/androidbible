@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
-	xmlns:app="http://schemas.android.com/apk/res-auto">
-    <item
-        android:id="@+id/menuDownload"
-        android:title="@string/rp_menuDownload"
+	xmlns:app="http://schemas.android.com/apk/res-auto"
+	xmlns:tools="http://schemas.android.com/tools"
+	tools:ignore="AlwaysShowAction">
+	<item
+		android:id="@+id/menuDownload"
 		android:icon="@drawable/ic_menu_add_light"
-		app:showAsAction="always"
-		/>
+		android:title="@string/rp_menuDownload"
+		app:showAsAction="always" />
+	<item
+		android:id="@+id/menuDelete"
+		android:icon="@drawable/ic_baseline_delete_outline_24_white"
+		android:title="@string/rp_menuDelete"
+		app:showAsAction="never" />
     <item
-        android:id="@+id/menuDelete"
-        android:title="@string/rp_menuDelete"
-		android:icon="@drawable/ic_action_discard"
-		app:showAsAction="always"
-		/>
+        android:id="@+id/menuRestart"
+        android:title="@string/rp_menuRestart"
+        app:showAsAction="never" />
 </menu>

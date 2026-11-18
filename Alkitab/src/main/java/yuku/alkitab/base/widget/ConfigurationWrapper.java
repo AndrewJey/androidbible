@@ -3,30 +3,22 @@ package yuku.alkitab.base.widget;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.res.Configuration;
-import android.os.Build;
-import android.os.LocaleList;
 import android.provider.Settings;
-import android.support.annotation.CheckResult;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.core.os.LocaleListCompat;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 import yuku.afw.storage.Preferences;
 import yuku.alkitab.base.App;
 import yuku.alkitab.base.util.AppLog;
 import yuku.alkitab.debug.BuildConfig;
 import yuku.alkitab.debug.R;
 
-import java.util.Locale;
-import java.util.concurrent.atomic.AtomicInteger;
-
 /**
  * Context wrapper for changing app-wide locale or font scale.
  */
-public class ConfigurationWrapper extends ContextWrapper {
+public class ConfigurationWrapper {
 	static final String TAG = ConfigurationWrapper.class.getSimpleName();
-
-	public ConfigurationWrapper(final Context base) {
-		super(base);
-	}
 
 	public static Context wrap(final Context base) {
 		final Configuration config = base.getResources().getConfiguration();
@@ -34,7 +26,7 @@ public class ConfigurationWrapper extends ContextWrapper {
 		final Locale prefLocale = getLocaleFromPreferences();
 		if (BuildConfig.DEBUG) AppLog.d(TAG, "@@wrap: config locale will be updated to: " + prefLocale);
 
-		ConfigurationCompat.setLocale(config, prefLocale);
+		config.setLocale(prefLocale);
 
 		final float fontScale = getFontScaleFromPreferences();
 		if (config.fontScale != fontScale) {
@@ -43,10 +35,30 @@ public class ConfigurationWrapper extends ContextWrapper {
 			config.fontScale = fontScale;
 		}
 
-		return new ConfigurationWrapper(ConfigurationCompat.updateConfiguration(base, config));
+		return new ContextWrapper(base.createConfigurationContext(config));
 	}
 
-	private static AtomicInteger serialCounter = new AtomicInteger();
+	/**
+	 * A context whose resources resolve strings in the app's configured
+	 * language, independent of the device locale.
+	 *
+	 * For components that never go through {@link #wrap}: only activities do,
+	 * via {@code BaseActivity.attachBaseContext}, so a service or any other
+	 * non-UI component resolving strings against its own context gets the
+	 * device language and silently ignores the in-app language preference.
+	 *
+	 * Unlike {@link #wrap} this copies the configuration rather than mutating
+	 * the caller's, and leaves font scale alone: callers here are producing
+	 * strings, not laying out text.
+	 */
+	@NonNull
+	public static Context localizedContext(@NonNull final Context base) {
+		final Configuration config = new Configuration(base.getResources().getConfiguration());
+		config.setLocale(getLocaleFromPreferences());
+		return base.createConfigurationContext(config);
+	}
+
+	private static final AtomicInteger serialCounter = new AtomicInteger();
 
 	public static int getSerialCounter() {
 		return serialCounter.get();
@@ -56,46 +68,10 @@ public class ConfigurationWrapper extends ContextWrapper {
 		serialCounter.incrementAndGet();
 	}
 
-	@SuppressWarnings("deprecation")
-	public static class ConfigurationCompat {
-		@Nullable
-		public static Locale getLocale(Configuration config) {
-			if (Build.VERSION.SDK_INT >= 24) {
-				final LocaleList locales = config.getLocales();
-				if (locales.size() > 0) {
-					return locales.get(0);
-				} else {
-					return null;
-				}
-			} else {
-				return config.locale;
-			}
-		}
-
-		public static void setLocale(Configuration config, @NonNull Locale locale) {
-			if (Build.VERSION.SDK_INT >= 17) {
-				config.setLocale(locale);
-			} else {
-				config.locale = locale;
-			}
-		}
-
-		@CheckResult
-		public static Context updateConfiguration(Context context, Configuration config) {
-			if (Build.VERSION.SDK_INT >= 17) {
-				return context.createConfigurationContext(config);
-			} else {
-				context.getResources().updateConfiguration(config, null);
-				return context;
-			}
-		}
-	}
-
-
 	@NonNull
 	public static Locale getLocaleFromPreferences() {
 		final String lang = Preferences.getString(R.string.pref_language_key, R.string.pref_language_default);
-		if (lang == null || "DEFAULT".equals(lang)) {
+		if ("DEFAULT".equals(lang)) {
 			return Locale.getDefault();
 		}
 
@@ -107,24 +83,22 @@ public class ConfigurationWrapper extends ContextWrapper {
 			return localeWithCountry(lang);
 
 		} else { // contains "-"
-			switch (lang) {
-				case "zh-CN":
-					return Locale.SIMPLIFIED_CHINESE;
-				case "zh-TW":
-					return Locale.TRADITIONAL_CHINESE;
-				default:
-					return new Locale(lang);
-			}
+			return LocaleListCompat.forLanguageTags(lang).get(0);
 		}
 	}
 
 	@NonNull
 	private static Locale localeWithCountry(@NonNull final String lang) {
+		// Reference:
+		// http://download.geonames.org/export/dump/countryInfo.txt
+		// https://wiki.openstreetmap.org/wiki/Nominatim/Country_Codes
 		switch (lang) {
 			case "af":
 				return new Locale("af", "ZA");
-			case "in":
-				return new Locale("in", "ID");
+			case "bg":
+				return new Locale("bg", "BG");
+			case "ceb":
+				return new Locale("ceb", "PH");
 			case "cs":
 				return new Locale("cs", "CZ");
 			case "da":
@@ -133,38 +107,48 @@ public class ConfigurationWrapper extends ContextWrapper {
 				return new Locale("de", "DE");
 			case "en":
 				return new Locale("en", "US");
+			case "el":
+				return new Locale("el", "GR");
 			case "es":
 				return new Locale("es", "ES");
 			case "fr":
 				return new Locale("fr", "FR");
+			case "hu":
+				return new Locale("hu", "HU");
+			case "in":
+				return new Locale("in", "ID");
 			case "it":
 				return new Locale("it", "IT");
-			case "lv":
-				return new Locale("lv", "LV");
-			case "nl":
-				return new Locale("nl", "NL");
-			case "pl":
-				return new Locale("pl", "PL");
-			case "pt":
-				return new Locale("pt", "BR");
-			case "ro":
-				return new Locale("ro", "RO");
-			case "vi":
-				return new Locale("vi", "VN");
-			case "bg":
-				return new Locale("bg", "BG");
-			case "ru":
-				return new Locale("ru", "RU");
-			case "uk":
-				return new Locale("uk", "UA");
-			case "th":
-				return new Locale("th", "TH");
-			case "tr":
-				return new Locale("tr", "TR");
 			case "ja":
 				return new Locale("ja", "JP");
 			case "ko":
 				return new Locale("ko", "KR");
+			case "lv":
+				return new Locale("lv", "LV");
+			case "ms":
+				return new Locale("ms", "MY");
+			case "my":
+				return new Locale("my", "MM");
+			case "nl":
+				return new Locale("nl", "NL");
+			case "pl":
+				return new Locale("pl", "PL");
+			case "pt": // pt-BR has its own resources already
+				return new Locale("pt", "PT");
+			case "ro":
+				return new Locale("ro", "RO");
+			case "ru":
+				return new Locale("ru", "RU");
+			case "th":
+				return new Locale("th", "TH");
+			case "tl":
+				return new Locale("tl", "PH");
+			case "tr":
+				return new Locale("tr", "TR");
+			case "uk":
+				return new Locale("uk", "UA");
+			case "vi":
+				return new Locale("vi", "VN");
 			default:
 				return new Locale(lang);
 		}

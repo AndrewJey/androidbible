@@ -1,452 +1,491 @@
 
 package yuku.alkitab.base.ac;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.graphics.Point;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
-import android.support.v7.app.ActionBar;
-import android.support.v7.widget.Toolbar;
-import android.view.ContextMenu;
-import android.view.ContextMenu.ContextMenuInfo;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
-import android.widget.AdapterView.AdapterContextMenuInfo;
-import android.widget.AdapterView.OnItemClickListener;
-import android.widget.BaseAdapter;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.PopupMenu;
 import android.widget.TextView;
-import com.afollestad.materialdialogs.MaterialDialog;
-import com.mobeta.android.dslv.DragSortController;
-import com.mobeta.android.dslv.DragSortListView;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import kotlin.Unit;
 import yuku.afw.storage.Preferences;
 import yuku.alkitab.base.App;
-import yuku.alkitab.base.S;
-import yuku.alkitab.base.U;
 import yuku.alkitab.base.ac.base.BaseActivity;
+import yuku.alkitab.base.compose.colorpicker.ColorPickerDialog;
 import yuku.alkitab.base.dialog.LabelEditorDialog;
+import yuku.alkitab.base.events.AppEvents;
 import yuku.alkitab.base.sync.SyncSettingsActivity;
 import yuku.alkitab.base.util.AppLog;
-import yuku.alkitab.base.util.BookmarkImporter;
+import yuku.alkitab.base.util.LabelColorUtil;
+import yuku.alkitab.base.widget.MaterialDialogJavaHelper;
 import yuku.alkitab.debug.BuildConfig;
 import yuku.alkitab.debug.R;
 import yuku.alkitab.model.Label;
 import yuku.alkitab.model.Marker;
-import yuku.ambilwarna.AmbilWarnaDialog;
-import yuku.ambilwarna.AmbilWarnaDialog.OnAmbilWarnaListener;
-import yuku.filechooser.FileChooserActivity;
-import yuku.filechooser.FileChooserConfig;
-import yuku.filechooser.FileChooserResult;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.List;
-import java.util.Locale;
 
 public class MarkersActivity extends BaseActivity {
-	public static final String TAG = MarkersActivity.class.getSimpleName();
-	
-	private static final int REQCODE_markerList = 1;
-	private static final int REQCODE_share = 2;
-	private static final int REQCODE_migrateFromV3 = 3;
+    static final String TAG = MarkersActivity.class.getSimpleName();
 
-	/** Action to broadcast when label list needs to be reloaded due to some background changes */
-	public static final String ACTION_RELOAD = MarkersActivity.class.getName() + ".action.RELOAD";
+    private static final int REQCODE_markerList = 1;
 
-	DragSortListView lv;
+    /** Number of fixed preset filters shown before user labels. */
+    private static final int PRESET_COUNT = 4;
+
+    RecyclerView lv;
     View bGotoSync;
-	
-	MarkerFilterAdapter adapter;
+    View panelGotoSync;
 
-	public static Intent createIntent() {
-		return new Intent(App.context, MarkersActivity.class);
-	}
+    MarkerFilterAdapter adapter;
+    ItemTouchHelper itemTouchHelper;
 
-	@Override protected void onCreate(Bundle savedInstanceState) {
-		super.onCreate(savedInstanceState);
-		setContentView(R.layout.activity_markers);
+    public static Intent createIntent() {
+        return new Intent(App.context, MarkersActivity.class);
+    }
 
-		final Toolbar toolbar = findViewById(R.id.toolbar);
-		setSupportActionBar(toolbar);
-		final ActionBar ab = getSupportActionBar();
-		assert ab != null;
-		ab.setDisplayHomeAsUpEnabled(true);
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_markers);
 
-		adapter = new MarkerFilterAdapter();
-		adapter.reload();
+        final Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        setupEdgeToEdgeDisplayWithoutBottomInset(toolbar);
+        final ActionBar ab = getSupportActionBar();
+        assert ab != null;
+        ab.setDisplayHomeAsUpEnabled(true);
 
-		lv = findViewById(android.R.id.list);
-		lv.setDropListener(adapter);
-		lv.setOnItemClickListener(lv_click);
-		lv.setAdapter(adapter);
+        adapter = new MarkerFilterAdapter();
+        adapter.reload();
 
-        MarkerFilterController c = new MarkerFilterController(lv, adapter);
-        lv.setFloatViewManager(c);
-        lv.setOnTouchListener(c);
+        lv = findViewById(android.R.id.list);
+        lv.setLayoutManager(new LinearLayoutManager(this));
+        lv.setAdapter(adapter);
 
-		registerForContextMenu(lv);
+        itemTouchHelper = new ItemTouchHelper(new LabelReorderCallback());
+        itemTouchHelper.attachToRecyclerView(lv);
 
-		bGotoSync = findViewById(R.id.bGotoSync);
+        bGotoSync = findViewById(R.id.bGotoSync);
         bGotoSync.setOnClickListener(v -> startActivity(SyncSettingsActivity.createIntent()));
 
-		App.getLbm().registerReceiver(br, new IntentFilter(ACTION_RELOAD));
-	}
+        panelGotoSync = findViewById(R.id.panelGotoSync);
+        final int panelGotoSyncHeight = panelGotoSync.getLayoutParams().height;
 
-	@Override
-	protected void onStart() {
-		super.onStart();
+        // The sync panel, when shown, is the bar the window bottom belongs to:
+        // it grows by the inset so its background reaches under the navigation
+        // bar while the button stays above.
+        ViewCompat.setOnApplyWindowInsetsListener(panelGotoSync, (v, windowInsets) -> {
+            final Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), insets.bottom);
+            final ViewGroup.LayoutParams lp = v.getLayoutParams();
+            lp.height = panelGotoSyncHeight + insets.bottom;
+            v.setLayoutParams(lp);
+            return windowInsets;
+        });
 
-		// hide sync button if we are already syncing
-		final String syncAccountName = Preferences.getString(R.string.pref_syncAccountName_key);
-		findViewById(R.id.panelGotoSync).setVisibility(syncAccountName != null ? View.GONE : View.VISIBLE);
-	}
+        lv.setClipToPadding(false);
+        ViewCompat.setOnApplyWindowInsetsListener(lv, (v, windowInsets) -> {
+            final Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            final int bottom = panelGotoSync.getVisibility() == View.VISIBLE ? 0 : insets.bottom;
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), bottom);
+            return windowInsets;
+        });
 
-	@Override
-	public boolean onCreateOptionsMenu(final Menu menu) {
-		getMenuInflater().inflate(R.menu.activity_markers, menu);
-		return true;
-	}
+        AppEvents.observe(this, AppEvents.markersReload, () -> adapter.reload());
+    }
 
-	@Override
-	public boolean onPrepareOptionsMenu(final Menu menu) {
-		final MenuItem menuLabelSort = menu.findItem(R.id.menuLabelSort);
+    @Override
+    protected void onStart() {
+        super.onStart();
 
-		final int labelCount = adapter.getLabelCount();
-		menuLabelSort.setVisible(labelCount > 1);
+        // hide sync button if we are already syncing
+        final String syncAccountName = Preferences.getString(R.string.pref_syncAccountName_key);
+        panelGotoSync.setVisibility(syncAccountName != null ? View.GONE : View.VISIBLE);
+        // the panel that just appeared or went away decides whether the list takes the bottom inset
+        ViewCompat.requestApplyInsets(lv);
+    }
 
-		return true;
-	}
+    @Override
+    public boolean onCreateOptionsMenu(final Menu menu) {
+        getMenuInflater().inflate(R.menu.activity_markers, menu);
+        return true;
+    }
 
-	@Override
-	public boolean onOptionsItemSelected(final MenuItem item) {
-		switch (item.getItemId()) {
-			case R.id.menuMigrateFromV3: {
-				final FileChooserConfig config = new FileChooserConfig();
-				config.mode = FileChooserConfig.Mode.Open;
-				config.pattern = "(yuku\\.alkitab|yuku\\.alkitab\\.kjv|org\\.sabda\\.alkitab|org\\.sabda\\.online)-(backup|autobackup-[0-9-]+)\\.xml";
-				config.title = getString(R.string.marker_migrate_file_chooser_title);
-				final Intent intent = FileChooserActivity.createIntent(this, config);
-				startActivityForResult(intent, REQCODE_migrateFromV3);
-			} return true;
-			case R.id.menuLabelSort:
-				S.getDb().sortLabelsAlphabetically();
-				adapter.reload();
-				return true;
-		}
+    @Override
+    public boolean onPrepareOptionsMenu(final Menu menu) {
+        final MenuItem menuLabelSort = menu.findItem(R.id.menuLabelSort);
 
-		return super.onOptionsItemSelected(item);
-	}
+        final int labelCount = adapter.getLabelCount();
+        menuLabelSort.setVisible(labelCount > 1);
 
-	@Override
-	protected void onDestroy() {
-		super.onDestroy();
+        return true;
+    }
 
-		App.getLbm().unregisterReceiver(br);
-	}
+    @Override
+    public boolean onOptionsItemSelected(final MenuItem item) {
+        int itemId = item.getItemId();
+        if (itemId == R.id.menuLabelSort) {
+            App.services.storage.getDb().sortLabelsAlphabetically();
+            adapter.reload();
+            return true;
+        }
 
-	BroadcastReceiver br = new BroadcastReceiver() {
-		@Override
-		public void onReceive(final Context context, final Intent intent) {
-			if (ACTION_RELOAD.equals(intent.getAction())) {
-				adapter.reload();
-			}
-		}
-	};
+        return super.onOptionsItemSelected(item);
+    }
 
-	private OnItemClickListener lv_click = new OnItemClickListener() {
-		@Override public void onItemClick(AdapterView<?> parent, View v, int position, long id) {
-			Intent intent;
-			if (position == 0) {
-				intent = MarkerListActivity.createIntent(App.context, Marker.Kind.bookmark, 0);
-			} else if (position == 1) {
-				intent = MarkerListActivity.createIntent(App.context, Marker.Kind.note, 0);
-			} else if (position == 2) {
-				intent = MarkerListActivity.createIntent(App.context, Marker.Kind.highlight, 0);
-			} else if (position == 3) {
-				intent = MarkerListActivity.createIntent(App.context, Marker.Kind.bookmark, MarkerListActivity.LABELID_noLabel);
-			} else {
-				Label label = adapter.getItem(position);
-				if (label != null) {
-					intent = MarkerListActivity.createIntent(getApplicationContext(), Marker.Kind.bookmark, label._id);
-				} else {
-					return;
-				}
-			}
-			startActivityForResult(intent, REQCODE_markerList);
-		}
-	};
+    private void onItemClick(int position) {
+        Intent intent;
+        if (position == 0) {
+            intent = MarkerListActivity.createIntent(App.context, Marker.Kind.bookmark, 0);
+        } else if (position == 1) {
+            intent = MarkerListActivity.createIntent(App.context, Marker.Kind.note, 0);
+        } else if (position == 2) {
+            intent = MarkerListActivity.createIntent(App.context, Marker.Kind.highlight, 0);
+        } else if (position == 3) {
+            intent = MarkerListActivity.createIntent(App.context, Marker.Kind.bookmark, MarkerListActivity.LABELID_noLabel);
+        } else {
+            Label label = adapter.getItem(position);
+            if (label == null) {
+                return;
+            }
+            intent = MarkerListActivity.createIntent(getApplicationContext(), Marker.Kind.bookmark, label._id);
+        }
+        startActivityForResult(intent, REQCODE_markerList);
+    }
 
-	@Override public void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo) {
+    private void showLabelPopupMenu(FrameLayout itemRoot, int position, int touchX, int touchY) {
+        if (position < PRESET_COUNT) return;
+        final Label label = adapter.getItem(position);
+        if (label == null) return;
 
-		AdapterContextMenuInfo info = (AdapterContextMenuInfo) menuInfo;
-		if (info.position >= 4) {
-			getMenuInflater().inflate(R.menu.context_markers, menu);
-		}
-	}
+        // PopupMenu anchors to a view's bounds, so it would open at the row's left edge by default.
+        // Insert a 1×1 px invisible anchor at the long-press point so the popup opens horizontally
+        // aligned with the user's finger instead.
+        final View anchorView = new View(this);
+        final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(1, 1);
+        lp.leftMargin = touchX;
+        lp.topMargin = touchY;
+        anchorView.setLayoutParams(lp);
+        itemRoot.addView(anchorView);
 
-	@Override public boolean onContextItemSelected(android.view.MenuItem item) {
-		final AdapterContextMenuInfo info = (AdapterContextMenuInfo) item.getMenuInfo();
+        final PopupMenu popup = new PopupMenu(this, anchorView);
+        popup.getMenuInflater().inflate(R.menu.context_markers, popup.getMenu());
+        popup.setOnMenuItemClickListener(menuItem -> onLabelMenuItemSelected(menuItem, label));
+        // Highlight the row while the popup is visible so it's clear which item is being acted on.
+        itemRoot.setForeground(new ColorDrawable(0x22ffffff));
+        popup.setOnDismissListener(p -> {
+            itemRoot.setForeground(null);
+            itemRoot.removeView(anchorView);
+        });
 
-		int itemId = item.getItemId();
-		if (itemId == R.id.menuRenameLabel) {
-			final Label label = adapter.getItem(info.position);
-			if (label == null) {
-				return true;
-			}
-			
-			LabelEditorDialog.show(this, label.title, getString(R.string.rename_label_title), title -> {
-				label.title = title;
-				S.getDb().insertOrUpdateLabel(label);
-				adapter.notifyDataSetChanged();
-			});
+        // Defer until after the next layout pass so the anchor view has a real screen location.
+        anchorView.post(popup::show);
+    }
 
-			return true;
-		} else if (itemId == R.id.menuDeleteLabel) {
-			final Label label = adapter.getItem(info.position);
-			if (label == null) {
-				return true;
-			}
-			
-			final int marker_count = S.getDb().countMarkersWithLabel(label);
+    private boolean onLabelMenuItemSelected(MenuItem item, Label label) {
+        int itemId = item.getItemId();
+        if (itemId == R.id.menuRenameLabel) {
+            LabelEditorDialog.show(this, label.title, getString(R.string.rename_label_title), title -> {
+                label.title = title;
+                App.services.storage.getDb().insertOrUpdateLabel(label);
+                adapter.notifyDataSetChanged();
+            });
+            return true;
+        } else if (itemId == R.id.menuDeleteLabel) {
+            final int marker_count = App.services.storage.getDb().countMarkersWithLabel(label);
 
-			if (marker_count == 0) {
-				// no markers, just delete straight away
-				S.getDb().deleteLabelAndMarker_LabelsByLabelId(label._id);
-				adapter.reload();
-			} else {
-				new MaterialDialog.Builder(this)
-					.content(getString(R.string.are_you_sure_you_want_to_delete_the_label_label, label.title, marker_count))
-					.negativeText(R.string.cancel)
-					.positiveText(R.string.delete)
-					.onPositive((dialog, which) -> {
-						S.getDb().deleteLabelAndMarker_LabelsByLabelId(label._id);
-						adapter.reload();
-					})
-					.show();
-			}
-			
-			return true;
-		} else if (itemId == R.id.menuChangeLabelColor) {
-			final Label label = adapter.getItem(info.position);
-			if (label == null) {
-				return true;
-			}
-			
-			int warnaLatarRgb = U.decodeLabelBackgroundColor(label.backgroundColor);
-			new AmbilWarnaDialog(MarkersActivity.this, 0xff000000 | warnaLatarRgb, new OnAmbilWarnaListener() {
-				@Override public void onOk(AmbilWarnaDialog dialog, int color) {
-					label.backgroundColor = U.encodeLabelBackgroundColor(0x00ffffff & color);
+            if (marker_count == 0) {
+                // no markers, just delete straight away
+                App.services.storage.getDb().deleteLabelAndMarker_LabelsByLabelId(label._id);
+                adapter.reload();
+            } else {
+                MaterialDialogJavaHelper.showOkDialog(
+                    this,
+                    getString(R.string.are_you_sure_you_want_to_delete_the_label_label, label.title, "" + marker_count),
+                    getString(R.string.delete),
+                    () -> {
+                        App.services.storage.getDb().deleteLabelAndMarker_LabelsByLabelId(label._id);
+                        adapter.reload();
+                        return Unit.INSTANCE;
+                    },
+                    getString(R.string.cancel)
+                );
+            }
 
-					S.getDb().insertOrUpdateLabel(label);
-					adapter.notifyDataSetChanged();
-				}
-				
-				@Override public void onCancel(AmbilWarnaDialog dialog) {
-					// nop
-				}
-			}).show();
-			
-			return true;
-		}
+            return true;
+        } else if (itemId == R.id.menuChangeLabelColor) {
+            int colorRgb = LabelColorUtil.decodeBackground(label.backgroundColor);
+            ColorPickerDialog.show(MarkersActivity.this, 0xff000000 | colorRgb, color -> {
+                label.backgroundColor = LabelColorUtil.encodeBackground(0x00ffffff & color);
+                App.services.storage.getDb().insertOrUpdateLabel(label);
+                adapter.notifyDataSetChanged();
+            });
 
-		return false;
-	}
-	
-	@Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-		if (requestCode == REQCODE_markerList) {
-			adapter.reload();
-			return;
-		} else if (requestCode == REQCODE_share && resultCode == RESULT_OK) {
-			final ShareActivity.Result result = ShareActivity.obtainResult(data);
-			startActivity(result.chosenIntent);
-			return;
-		} else if (requestCode == REQCODE_migrateFromV3 && resultCode == RESULT_OK) {
-			final FileChooserResult result = FileChooserActivity.obtainResult(data);
-			if (result != null) {
-				final File file = new File(result.firstFilename);
-				try {
-					final FileInputStream fis = new FileInputStream(file);
-					BookmarkImporter.importBookmarks(this, fis, false, () -> adapter.reload());
-				} catch (IOException e) {
-					new MaterialDialog.Builder(this)
-						.content(R.string.marker_migrate_error_opening_backup_file)
-						.positiveText(R.string.ok)
-						.show();
-				}
-			}
-			return;
-		}
+            return true;
+        }
 
-		super.onActivityResult(requestCode, resultCode, data);
-	}
+        return false;
+    }
 
-	private class MarkerFilterController extends DragSortController {
-		int mDivPos;
-		int mDraggedPos;
-		final DragSortListView lv;
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQCODE_markerList) {
+            adapter.reload();
+            return;
+        }
 
-		public MarkerFilterController(DragSortListView lv, MarkerFilterAdapter adapter) {
-			super(lv, R.id.drag_handle, DragSortController.ON_DOWN, 0);
+        super.onActivityResult(requestCode, resultCode, data);
+    }
 
-			this.lv = lv;
+    private class LabelReorderCallback extends ItemTouchHelper.Callback {
+        /** Snapshot of `labels` captured at drag start, used to resolve the destination label on drop. */
+        private List<Label> dragStartSnapshot;
+        /** Starting adapter position of the dragged viewHolder. */
+        private int dragStartPos = RecyclerView.NO_POSITION;
 
-			mDivPos = adapter.getDivPosition();
-			setRemoveEnabled(false);
-		}
+        @Override
+        public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
+            // Only user labels (position >= PRESET_COUNT) can be dragged.
+            if (viewHolder.getBindingAdapterPosition() < PRESET_COUNT) {
+                return 0;
+            }
+            return makeMovementFlags(ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0);
+        }
 
-		@Override public int startDragPosition(MotionEvent ev) {
-			int res = super.dragHandleHitPosition(ev);
-			if (res < mDivPos) {
-				return DragSortController.MISS;
-			}
+        @Override
+        public boolean isLongPressDragEnabled() {
+            return false; // drag is initiated by touching the drag handle
+        }
 
-			return res;
-		}
+        @Override
+        public boolean isItemViewSwipeEnabled() {
+            return false;
+        }
 
-		@Override public View onCreateFloatView(int position) {
-			mDraggedPos = position;
-			final View res = adapter.getView(position, null, lv);
-			res.setBackgroundColor(0x22ffffff);
-			return res;
-		}
-		
-		@Override public void onDestroyFloatView(View floatView) {
-			// Do not call super and do not remove this override.
-			floatView.setBackgroundColor(0);
-		}
+        @Override
+        public boolean canDropOver(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder current, @NonNull RecyclerView.ViewHolder target) {
+            // Prevent dropping a user label into the preset-filter section.
+            return target.getBindingAdapterPosition() >= PRESET_COUNT;
+        }
 
-		@Override public void onDragFloatView(View floatView, Point floatPoint, Point touchPoint) {
-			super.onDragFloatView(floatView, floatPoint, touchPoint);
+        @Override
+        public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder, @NonNull RecyclerView.ViewHolder target) {
+            final int from = viewHolder.getBindingAdapterPosition();
+            final int to = target.getBindingAdapterPosition();
+            if (from < PRESET_COUNT || to < PRESET_COUNT) return false;
+            adapter.moveItemLocally(from, to);
+            return true;
+        }
 
-			final int first = lv.getFirstVisiblePosition();
-			final int lvDivHeight = lv.getDividerHeight();
+        @Override
+        public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
+            // unused
+        }
 
-			View div = lv.getChildAt(mDivPos - first - 1);
+        @Override
+        public void onSelectedChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
+            super.onSelectedChanged(viewHolder, actionState);
+            if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
+                viewHolder.itemView.setBackgroundColor(0x22ffffff);
+                dragStartPos = viewHolder.getBindingAdapterPosition();
+                dragStartSnapshot = new ArrayList<>(adapter.labels);
+            }
+        }
 
-			if (div != null) {
-				if (mDraggedPos >= mDivPos) {
-					// don't allow floating View to go above section divider
-					final int limit = div.getBottom() + lvDivHeight;
-					if (floatPoint.y < limit) {
-						floatPoint.y = limit;
-					}
-				}
-			}
-		}
-	}
+        @Override
+        public void clearView(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
+            super.clearView(recyclerView, viewHolder);
+            viewHolder.itemView.setBackgroundColor(0);
 
-	private class MarkerFilterAdapter extends BaseAdapter implements DragSortListView.DropListener {
-		// 0. [icon] All bookmarks
-		// 1. [icon] Notes
-		// 2. [icon] Highlights
-		// 3. Unlabeled bookmarks
-		// 4 and so on. labels
+            final int endPos = viewHolder.getBindingAdapterPosition();
+            final List<Label> snapshot = dragStartSnapshot;
+            final int startPos = dragStartPos;
+            dragStartSnapshot = null;
+            dragStartPos = RecyclerView.NO_POSITION;
 
-		List<Label> labels;
-		
-		private String[] presetCaptions = {
-			getString(R.string.bmcat_all_bookmarks),
-			getString(R.string.bmcat_notes),
-			getString(R.string.bmcat_highlights),
-			getString(R.string.bmcat_unlabeled_bookmarks),
-		};
-		
-		@Override public Label getItem(int position) {
-			if (position < 4) return null;
-			return labels.get(position - 4);
-		}
+            if (snapshot == null || startPos == RecyclerView.NO_POSITION || endPos == RecyclerView.NO_POSITION) return;
+            if (startPos == endPos) return;
 
-		@Override public long getItemId(int position) {
-			return position;
-		}
+            final int fromIdx = startPos - PRESET_COUNT;
+            final int toIdx = endPos - PRESET_COUNT;
+            if (fromIdx < 0 || fromIdx >= snapshot.size() || toIdx < 0 || toIdx >= snapshot.size()) return;
 
-		@Override public void drop(int from, int to) {
-			if (from != to) {
-				Label fromLabel = getItem(from);
-				Label toLabel = getItem(to);
-				
-				if (fromLabel != null && toLabel != null) {
-					S.getDb().reorderLabels(fromLabel, toLabel);
-					adapter.reload();
-				}
-			}
-		}
+            final Label fromLabel = snapshot.get(fromIdx);
+            final Label toLabel = snapshot.get(toIdx);
+            App.services.storage.getDb().reorderLabels(fromLabel, toLabel);
+            adapter.reload();
+        }
+    }
 
-		private boolean hasLabels() {
-			return labels != null && labels.size() > 0;
-		}
+    class LabelViewHolder extends RecyclerView.ViewHolder {
+        final FrameLayout itemRoot;
+        final ImageView imgFilterIcon;
+        final TextView lFilterCaption;
+        final TextView lFilterLabel;
+        final View drag_handle;
+        /** Last ACTION_DOWN X coordinate in itemView-local px, used to position the long-press popup. */
+        int lastTouchX;
+        /** Last ACTION_DOWN Y coordinate in itemView-local px, used to position the long-press popup. */
+        int lastTouchY;
 
-		@Override public int getCount() {
-			return 3 + (hasLabels() ? 1 + labels.size() : 0);
-		}
+        LabelViewHolder(@NonNull View itemView) {
+            super(itemView);
+            itemRoot = (FrameLayout) itemView;
+            imgFilterIcon = itemView.findViewById(R.id.imgFilterIcon);
+            lFilterCaption = itemView.findViewById(R.id.lFilterCaption);
+            lFilterLabel = itemView.findViewById(R.id.lFilterLabel);
+            drag_handle = itemView.findViewById(R.id.drag_handle);
 
-		public int getDivPosition() {
-			return 4;
-		}
+            // Track last touch-down so long-press can position its popup horizontally at the finger.
+            itemView.setOnTouchListener((v, event) -> {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    lastTouchX = (int) event.getX();
+                    lastTouchY = (int) event.getY();
+                }
+                return false;
+            });
 
-		@Override public View getView(int position, View convertView, ViewGroup parent) {
-			final View res = convertView != null? convertView: getLayoutInflater().inflate(R.layout.item_marker_filter, parent, false);
+            itemView.setOnClickListener(v -> {
+                int pos = getBindingAdapterPosition();
+                if (pos != RecyclerView.NO_POSITION) {
+                    onItemClick(pos);
+                }
+            });
 
-			ImageView imgFilterIcon = res.findViewById(R.id.imgFilterIcon);
-			if (position < 3) {
-				imgFilterIcon.setVisibility(View.VISIBLE);
-				imgFilterIcon.setImageResource(position == 0? R.drawable.ic_attr_bookmark: position == 1? R.drawable.ic_attr_note: position == 2? R.drawable.ic_attr_highlight: 0);
-			} else {
-				imgFilterIcon.setVisibility(View.GONE);
-			}
+            itemView.setOnLongClickListener(v -> {
+                int pos = getBindingAdapterPosition();
+                if (pos != RecyclerView.NO_POSITION && pos >= PRESET_COUNT) {
+                    showLabelPopupMenu(itemRoot, pos, lastTouchX, lastTouchY);
+                    return true;
+                }
+                return false;
+            });
 
-			TextView lFilterCaption = res.findViewById(R.id.lFilterCaption);
-			if (position < 4) {
-				lFilterCaption.setVisibility(View.VISIBLE);
-				lFilterCaption.setText(presetCaptions[position]);
-			} else {
-				lFilterCaption.setVisibility(View.GONE);
-			}
+            drag_handle.setOnTouchListener((v, event) -> {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    itemTouchHelper.startDrag(this);
+                }
+                return false;
+            });
+        }
+    }
 
-			TextView lFilterLabel = res.findViewById(R.id.lFilterLabel);
-			if (position < 4) {
-				lFilterLabel.setVisibility(View.GONE);
-			} else {
-				Label label = getItem(position);
-				lFilterLabel.setVisibility(View.VISIBLE);
-				lFilterLabel.setText(label.title);
-				
-				U.applyLabelColor(label, lFilterLabel);
-			}
+    private class MarkerFilterAdapter extends RecyclerView.Adapter<LabelViewHolder> {
+        // 0. [icon] All bookmarks
+        // 1. [icon] Notes
+        // 2. [icon] Highlights
+        // 3. Unlabeled bookmarks
+        // 4 and so on. labels
 
-			View drag_handle = res.findViewById(R.id.drag_handle);
-			if (position < 4) {
-				drag_handle.setVisibility(View.GONE);
-			} else {
-				drag_handle.setVisibility(View.VISIBLE);
-			}
-			
-			return res;
-		}
-		
-		void reload() {
-			labels = S.getDb().listAllLabels();
-			
-			if (BuildConfig.DEBUG) {
-				AppLog.d(TAG, "_id  title                ordering backgroundColor");
-				for (Label label: labels) {
-					AppLog.d(TAG, String.format(Locale.US, "%4d %20s %8d %s", label._id, label.title, label.ordering, label.backgroundColor));
-				}
-			}
-			
-			notifyDataSetChanged();
-			supportInvalidateOptionsMenu();
-		}
+        List<Label> labels = new ArrayList<>();
 
-		public int getLabelCount() {
-			return labels.size();
-		}
-	}
+        private final String[] presetCaptions = {
+            getString(R.string.bmcat_all_bookmarks),
+            getString(R.string.bmcat_notes),
+            getString(R.string.bmcat_highlights),
+            getString(R.string.bmcat_unlabeled_bookmarks),
+        };
+
+        MarkerFilterAdapter() {
+        }
+
+        public Label getItem(int position) {
+            if (position < PRESET_COUNT) return null;
+            int idx = position - PRESET_COUNT;
+            if (idx < 0 || idx >= labels.size()) return null;
+            return labels.get(idx);
+        }
+
+        private boolean hasLabels() {
+            return !labels.isEmpty();
+        }
+
+        @Override
+        public int getItemCount() {
+            return 3 + (hasLabels() ? 1 + labels.size() : 0);
+        }
+
+        @NonNull
+        @Override
+        public LabelViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            final View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_marker_filter, parent, false);
+            return new LabelViewHolder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull LabelViewHolder h, int position) {
+            if (position < 3) {
+                h.imgFilterIcon.setVisibility(View.VISIBLE);
+                h.imgFilterIcon.setImageResource(position == 0 ? R.drawable.ic_attr_bookmark : position == 1 ? R.drawable.ic_attr_note : R.drawable.ic_attr_highlight);
+            } else {
+                h.imgFilterIcon.setVisibility(View.GONE);
+            }
+
+            if (position < PRESET_COUNT) {
+                h.lFilterCaption.setVisibility(View.VISIBLE);
+                h.lFilterCaption.setText(presetCaptions[position]);
+            } else {
+                h.lFilterCaption.setVisibility(View.GONE);
+            }
+
+            if (position < PRESET_COUNT) {
+                h.lFilterLabel.setVisibility(View.GONE);
+            } else {
+                Label label = getItem(position);
+                h.lFilterLabel.setVisibility(View.VISIBLE);
+                h.lFilterLabel.setText(label.title);
+
+                LabelColorUtil.apply(label, h.lFilterLabel);
+            }
+
+            h.drag_handle.setVisibility(position < PRESET_COUNT ? View.GONE : View.VISIBLE);
+        }
+
+        /** Reorder within the local list during a drag. Persistence happens once on drop. */
+        void moveItemLocally(int from, int to) {
+            int fromIdx = from - PRESET_COUNT;
+            int toIdx = to - PRESET_COUNT;
+            if (fromIdx < 0 || fromIdx >= labels.size() || toIdx < 0 || toIdx >= labels.size()) return;
+
+            Label moved = labels.remove(fromIdx);
+            labels.add(toIdx, moved);
+            notifyItemMoved(from, to);
+        }
+
+        void reload() {
+            labels = App.services.storage.getDb().listAllLabels();
+
+            if (BuildConfig.DEBUG) {
+                AppLog.d(TAG, "_id  title                ordering backgroundColor");
+                for (Label label : labels) {
+                    AppLog.d(TAG, String.format(Locale.US, "%4d %20s %8d %s", label._id, label.title, label.ordering, label.backgroundColor));
+                }
+            }
+
+            notifyDataSetChanged();
+            supportInvalidateOptionsMenu();
+        }
+
+        public int getLabelCount() {
+            return labels.size();
+        }
+    }
 }

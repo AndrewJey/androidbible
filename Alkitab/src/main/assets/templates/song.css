@@ -12,12 +12,31 @@
 	font-weight: bold;
 	font-size: 125%;
 	text-align: center;
+	margin-bottom: 8px;
 }
 
 .title_original {
 	font-family: sans-serif;
 	font-size: 87.5%;
 	text-align: center;
+	margin-bottom: 8px;
+}
+
+.body {
+}
+
+.row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+}
+
+.note {
+	font-style: italic;
+}
+
+.youtube {
+	margin: 0.5em 0;
 }
 
 .song {
@@ -64,13 +83,11 @@
 
 .authors_lyric {
 	font-family: sans-serif;
-	float: left;
 	font-size: 87.5%;
 }
 
 .authors_music {
 	font-family: sans-serif;
-	float: right;
 	font-size: 87.5%;
 }
 
@@ -78,13 +95,8 @@
 	font-family: sans-serif;
 }
 
-.scriptureReferences a {
-	color: #33b5e5;
-}
-
 .tune {
 	font-family: sans-serif;
-	text-transform: uppercase;
 	float: right;
 	font-size: 87.5%;
 }
@@ -93,7 +105,7 @@
 	clear: both;
 }
 
-.timeSignature, .keySignature {
+.musical {
 	font-family: sans-serif;
 	font-size: 87.5%;
 	display: inline;
@@ -108,17 +120,15 @@
 
 .copyright {
     font-size: 75%;
-    text-transform: uppercase;
     font-weight: bold;
     opacity: 0.54;
 }
 
 .patchtext {
     font-size: 75%;
-    color: #03a9f4;
 }
 
 a {
-    color: #03a9f4;
+    color: inherit;
 }
 

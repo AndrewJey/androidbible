@@ -1,16 +1,13 @@
 package yuku.alkitab.base.config;
 
 import android.content.res.XmlResourceParser;
+import java.util.ArrayList;
+import java.util.List;
 import org.xmlpull.v1.XmlPullParser;
 import yuku.afw.App;
 import yuku.alkitab.debug.R;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class AppConfig {
-	public static final String TAG = AppConfig.class.getSimpleName();
-
 	public boolean menuDevotion;
 	public boolean menuSongs;
 	public boolean menuDictionary;

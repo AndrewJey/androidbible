@@ -27,8 +27,22 @@
 		android:summary="@string/pref_bottomToolbarOnText_summary"
 		android:title="@string/pref_bottomToolbarOnText_title" />
 
-	<yuku.ambilwarna.widget.AmbilWarnaPreference
+	<CheckBoxPreference
+		android:defaultValue="@bool/pref_verseNumberIsShown_default"
+		android:key="@string/pref_verseNumberIsShown_key"
+		android:summary="@string/pref_verseNumberIsShown_summary"
+		android:title="@string/pref_verseNumberIsShown_title" />
+
+	<yuku.alkitab.base.widget.ColorPreference
 		android:defaultValue="@integer/pref_selectedVerseBgColor_default"
 		android:key="@string/pref_selectedVerseBgColor_key"
 		android:title="@string/pref_selectedVerseBgColor_title" />
+    <ListPreference
+        android:key="@string/pref_currentReadingDisplay_key"
+        android:title="@string/pref_currentReadingDisplay_title"
+        android:defaultValue="@string/pref_currentReadingDisplay_default"
+        android:entries="@array/current_reading_display_labels"
+        android:entryValues="@array/current_reading_display_values"
+        android:negativeButtonText="@null"
+        android:positiveButtonText="@null" />
 </PreferenceScreen>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pref_bahasa_language">Lengguwahe</string>
+    <string name="pref_warna_teks_alkitab">Teksto</string>
+    <string name="pref_warna_latar_belakang">Background</string>
+    <string name="pref_warna_nomor_ayat">Talatang mga numero</string>
+    <string name="pref_redTextColor_title">Mga salita ni Jesus</string>
+    <string name="pref_penggunaan">Paggamit</string>
+    <string name="pref_copy_share">Kopyahin at ibahagi</string>
+    <string name="pref_tampilkan_kitab_dalam_urutan_abjad_bukan_urutan_aslinya">Ilista ang mga libro sa alpabetong kaayusan (a-z) sa halip ng orihinal</string>
+    <string name="pref_kitab_menurut_abjad">Uriin ang mga libro sa alpabeto</string>
+    <string name="pref_layar_tidak_akan_padam_ketika_membaca_teks_alkitab">Ang screen ng device ay hindi masasara kung magbabasa ng Bibliya</string>
+    <string name="pref_biarkan_layar_menyala">Panatilihing naka bukas ang screen</string>
+    <string name="pref_penampilan_layar">Ipakita</string>
+    <string name="pref_volumeButtonNavigation_title">Volume boton ng nabigasyon</string>
+    <string name="pref_copyWithVerseNumbers_title">Talatang mga numero</string>
+    <string name="pref_copyWithVerseNumbers_summary">Magsimula sa bawat taludtod na may numero nito</string>
+    <string name="pref_copyWithVersionName_title">Bersyong pinaikli</string>
+    <string name="pref_copyWithVersionName_summary">Banggitin ang paunang bersyon ng Bibliya</string>
+    <string name="pref_copyWithShareUrl_title">Ibahagi ang URL</string>
+    <string name="pref_copyWithShareUrl_summary">Ilakip ang link ng pagbabagi ng pahina sa dulo ng nakopyao naibahaging teksto</string>
+    <string name="pref_autoDictionaryAnalyze_title">Awtomatikong paghahanap sa diksyunaryo</string>
+    <string name="pref_autoDictionaryAnalyze_summary">Maghanap ng mga salita ng diksyunaryo sa napiling mga bersikulo</string>
+    <string name="pref_tapToEditNote_title">Tapikin para ma edit ang sulat</string>
+    <string name="pref_tapToEditNote_summary">Wag i-tsek para mapigilan ang hindi sadyang pag i-edit kapag tinitignan ang umiiral na mga tala</string>
+    <string name="pref_showHiddenVersion_title">Paganahin ang posibleng limitadong mga bersyon</string>
+    <string name="pref_selectedVerseBgColor_title">Napiling background ng taludtod</string>
+    <string name="pref_forceFontScale_title">UI laki ng teksto</string>
+    <string name="pref_data_transfer">Paglipat ng data</string>
+    <string name="pref_data_transfer_export_title">I-export ang data</string>
+    <string name="pref_data_transfer_import_title">Mag-import ng data</string>
+    <string name="pref_experimental">Mga pang-eksperimentong tampok</string>
+    <string name="pref_experimental_warning">Maaaring hindi matatag. I-disable kung may mga isyu ka.</string>
+    <string name="pref_debugRubyGeometry_title">I-debug ang ruby ​​geometry</string>
+    <string name="pref_debugRubyGeometry_summary">Gumuhit ng mga kahon sa paligid ng bawat linya, base na text, at ruby text ng pagbigkas sa screen. Isulat ang mga sukat sa log ng system na may tag na RubyGeom. I-tap ang isang taludtod para kopyahin ang mga sukat nito sa clipboard. Para sa pag-debug ng ruby text placement lamang; panatilihing naka-disable ang opsyong ito.</string>
+    <string name="pref_useLegacyVerseItem_title">Talata (mga legacy view)</string>
+    <string name="pref_useLegacyVerseItem_summary">Ipakita ang teksto ng Bibliya na may legacy na view-based na listahan ng talata sa halip na ang ganap na Jetpack Compose-based. Magkakabisa kapag muling binuksan ang screen ng reader.</string>
+    <string name="pref_useLegacyGoto_title">Navigation (mga legacy view)</string>
+    <string name="pref_useLegacyGoto_summary">Ipakita ang legacy na tab-based na Navigation screen sa halip na ang Jetpack Compose.</string>
+    <string name="pref_useLegacyToolbar_title">Toolbar ng mambabasa (mga legacy view)</string>
+    <string name="pref_useLegacyToolbar_summary">Iguhit ang reading screen toolbar gamit ang legacy view sa halip na Jetpack Compose. Magkakabisa pagkatapos mabuksan muli ang screen ng pagbabasa.</string>
+    <string name="pref_useLegacySong_title">Lyrics ng kanta (mga legacy view)</string>
+    <string name="pref_useLegacySong_summary">I-render ang lyrics ng kanta na may legacy na WebView (HTML/CSS) sa halip na native na may Jetpack Compose. Magbukas ng kanta para makita ang pagbabago.</string>
+    <string name="pref_useLegacySyncLogin_title">I-sync ang pag-login (mga legacy na view)</string>
+    <string name="pref_useLegacySyncLogin_summary">Ipakita ang legacy sync login screen sa halip na ang Jetpack Compose isa, na mayroong show/hide password toggle at inline confirm-password field.</string>
+</resources>

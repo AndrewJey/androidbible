@@ -6,15 +6,9 @@ fi
 set -e
 
 DST="Alkitab/src/main/res/"
-DST_FEEDBACK="AlkitabFeedback/src/main/res/"
 SRC="$1"
 
 if [ ! -e "$DST" ] ; then
-	echo "This script is not run from the correct directory"
-	exit 1
-fi
-
-if [ ! -e "$DST_FEEDBACK" ] ; then
 	echo "This script is not run from the correct directory"
 	exit 1
 fi
@@ -24,14 +18,13 @@ if [ ! -e "$SRC" ] ; then
 	exit 1
 fi
 
-# Keep this synced with build.gradle resConfigs!
-PAIRS=(af af bg bg cs cs da da de de es es-ES fr fr in id it it ja ja ko ko lv lv ms ms nl nl pl pl pt pt-BR ro ro ru ru th th tr tr uk uk vi vi zh-rCN zh-CN zh-rTW zh-TW)
+# Keep this synced with Alkitab/build.gradle.kts androidResources.localeFilters, pref_language.xml, and ConfigurationWrapper!
+PAIRS=(af af bg bg ceb ceb cs cs da da de de el el es es-ES fr fr hu hu in id it it ja ja ko ko lv lv ms ms my my nl nl pl pl pt-rBR pt-BR pt pt-PT ro ro ru ru th th tl tl tr tr uk uk vi vi zh-rCN zh-CN zh-rTW zh-TW)
 
 for ((i=0; i<${#PAIRS[@]}; i+=2)) ; do
 	DSTLANG="${PAIRS[$i]}"
 	SRCLANG="${PAIRS[$((i+1))]}"
 	DSTSUBDIR="$DST/values-$DSTLANG"
-	DSTSUBDIR_FEEDBACK="$DST_FEEDBACK/values-$DSTLANG"
 	SRCSUBDIR="$SRC/$SRCLANG"
 
 	if [ ! -e "$DSTSUBDIR" ] ; then
@@ -49,7 +42,7 @@ for ((i=0; i<${#PAIRS[@]}; i+=2)) ; do
 	done
 
 	for f in alkitabfeedback_strings.xml ; do
-		cp "$SRCSUBDIR/$f" "$DSTSUBDIR_FEEDBACK/$f"
+		cp "$SRCSUBDIR/$f" "$DSTSUBDIR/$f"
 	done
 
 done

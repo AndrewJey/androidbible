@@ -1,307 +1,300 @@
 package yuku.alkitab.base.widget;
 
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Typeface;
-import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.v4.content.res.ResourcesCompat;
-import android.support.v4.view.MotionEventCompat;
+import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
+import androidx.annotation.NonNull;
+import androidx.appcompat.content.res.AppCompatResources;
+import androidx.core.content.res.ResourcesCompat;
+import java.util.Objects;
 import yuku.afw.storage.Preferences;
-import yuku.alkitab.base.App;
-import yuku.alkitab.base.IsiActivity;
+import yuku.alkitab.base.events.AppEvents;
 import yuku.alkitab.base.storage.Prefkey;
 import yuku.alkitab.debug.R;
 
 
 public class LabeledSplitHandleButton extends SplitHandleButton {
-	public static final String TAG = LabeledSplitHandleButton.class.getSimpleName();
+    String label1 = null;
+    String label2 = null;
+    Paint labelPaint = new Paint();
+    float textSize = 14f;
+    float label1length;
+    float label2length;
+    float rotatelength;
+    boolean label1pressed = false;
+    boolean label2pressed = false;
+    boolean rotatepressed = false;
+    boolean label1down = false;
+    boolean label2down = false;
+    boolean rotatedown = false;
+    float density;
+    int leftInset = 0;
+    int rightInset = 0;
+    int topInset = 0;
+    int bottomInset = 0;
 
-	String label1 = null;
-	String label2 = null;
-	Paint labelPaint = new Paint();
-	Paint bezelPaint = new Paint();
-	float textSize = 14f;
-	float label1length;
-	float label2length;
-	float rotatelength;
-	boolean label1pressed = false;
-	boolean label2pressed = false;
-	boolean rotatepressed = false;
-	boolean label1down = false;
-	boolean label2down = false;
-	boolean rotatedown = false;
-	float density;
+    ButtonPressListener buttonPressListener;
+    int primaryColor;
+    int accentColor;
+    Paint accentColorPaint = new Paint();
 
-	ButtonPressListener buttonPressListener;
-	int primaryColor;
-	int accentColor;
-	Paint accentColorPaint = new Paint();
+    Drawable splitVerticalDrawable;
+    Drawable splitHorizontalDrawable;
 
-	Bitmap splitVerticalBitmap;
-	Bitmap splitHorizontalBitmap;
+    public enum Button {
+        start,
+        end,
+        rotate,
+    }
 
-	public enum Button {
-		start,
-		end,
-		rotate,
-	}
+    public interface ButtonPressListener {
+        void onLabelPressed(Button button);
+    }
 
-	public interface ButtonPressListener {
-		void onLabelPressed(Button button);
-	}
+    public LabeledSplitHandleButton(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        init();
+    }
 
-	public LabeledSplitHandleButton(Context context, AttributeSet attrs) {
-		super(context, attrs);
-		init();
-	}
+    void init() {
+        density = getResources().getDisplayMetrics().density;
+        labelPaint.setColor(0xffffffff);
+        labelPaint.setShadowLayer(2.f * density, 0, 0, 0xff000000);
+        labelPaint.setTextSize(textSize * density);
+        labelPaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        labelPaint.setAntiAlias(true);
 
-	void init() {
-		density = getResources().getDisplayMetrics().density;
-		labelPaint.setColor(0xffffffff);
-		labelPaint.setShadowLayer(2.f * density, 0, 0, 0xff000000);
-		labelPaint.setTextSize(textSize * density);
-		if (Build.VERSION.SDK_INT >= 21) {
-			labelPaint.setTypeface(Typeface.create("sans-serif-medium", 0));
-		} else {
-			labelPaint.setTypeface(Typeface.DEFAULT_BOLD);
-		}
-		labelPaint.setAntiAlias(true);
-		bezelPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+        initializePrimaryColor();
+        accentColor = ResourcesCompat.getColor(getResources(), R.color.accent, getContext().getTheme());
+        accentColorPaint.setColor(accentColor);
+        accentColorPaint.setAntiAlias(true);
 
-		initializePrimaryColor();
-		accentColor = ResourcesCompat.getColor(getResources(), R.color.accent, getContext().getTheme());
-		accentColorPaint.setColor(accentColor);
-		accentColorPaint.setAntiAlias(true);
+        rotatelength = getResources().getDimensionPixelSize(R.dimen.split_handle_thickness);
 
-		rotatelength = getResources().getDimensionPixelSize(R.dimen.split_handle_thickness);
-	}
+        AppEvents.observeOnView(this, AppEvents.nightModeChanged, () -> {
+            initializePrimaryColor();
+            invalidate();
+        });
+    }
 
-	public void setButtonPressListener(final ButtonPressListener buttonPressListener) {
-		this.buttonPressListener = buttonPressListener;
-	}
+    public void setButtonPressListener(final ButtonPressListener buttonPressListener) {
+        this.buttonPressListener = buttonPressListener;
+    }
 
-	public void setLabel1(String label1) {
-		this.label1 = label1;
-		invalidate();
-	}
+    public void setLabel1(String label1) {
+        this.label1 = label1;
+        invalidate();
+    }
 
-	public void setLabel2(String label2) {
-		this.label2 = label2;
-		invalidate();
-	}
+    public void setLabel2(String label2) {
+        this.label2 = label2;
+        invalidate();
+    }
 
-	@Override
-	public boolean onTouchEvent(final MotionEvent event) {
-		// check if touch is at label1, label2, rotate button, or neither
-		final int maxLabel1sz = (int) Math.min(140 * density, label1length);
-		final int maxLabel2sz = (int) Math.min(140 * density, label2length);
+    /**
+     * The bar extends behind system bars and cutouts; its labels and touch
+     * targets stay inside the safe area.
+     */
+    public void setSafeAreaInsets(int leftInset, int topInset, int rightInset, int bottomInset) {
+        if (this.leftInset == leftInset && this.topInset == topInset && this.rightInset == rightInset && this.bottomInset == bottomInset) return;
+        this.leftInset = leftInset;
+        this.rightInset = rightInset;
+        this.topInset = topInset;
+        this.bottomInset = bottomInset;
+        invalidate();
+    }
 
-		final int action = MotionEventCompat.getActionMasked(event);
-		if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-			// pos is the x (when orientation is vertical) or y (otherwise)
-			final float pos;
+    @Override
+    public boolean onTouchEvent(final MotionEvent event) {
+        // check if touch is at label1, label2, rotate button, or neither
+        final int maxLabel1sz = (int) Math.min(140 * density, label1length);
+        final int maxLabel2sz = (int) Math.min(140 * density, label2length);
 
-			// length is the width or the height
-			final int length;
+        final int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            // pos is the x (when orientation is vertical) or y (otherwise)
+            final float pos;
 
-			if (orientation == Orientation.vertical) {
-				pos = event.getX();
-				length = getWidth();
-			} else {
-				pos = event.getY();
-				length = getHeight();
-			}
+            // length is the width or the height
+            final int length;
 
-			if (action == MotionEvent.ACTION_DOWN) {
-				label1down = pos < maxLabel1sz;
-				label2down = pos > length - maxLabel2sz;
-				rotatedown = pos >= (length - rotatelength) * 0.5f && pos <= (length + rotatelength) * 0.5f;
-			}
+            // shifts of the labels away from the bar's ends
+            final int startInset;
+            final int endInset;
 
-			if (action == MotionEvent.ACTION_UP && buttonPressListener != null) {
-				label1pressed = label1down && pos < maxLabel1sz;
-				label2pressed = label2down && pos > length - maxLabel2sz;
-				rotatepressed = rotatedown && pos >= (length - rotatelength) * 0.5f && pos <= (length + rotatelength) * 0.5f;
+            if (orientation == Orientation.vertical) {
+                pos = event.getX();
+                length = getWidth();
+                startInset = leftInset;
+                endInset = rightInset;
+            } else {
+                pos = event.getY();
+                length = getHeight();
+                startInset = topInset;
+                endInset = bottomInset;
+            }
 
-				if (rotatepressed) {
-					orientation = orientation == Orientation.horizontal ? Orientation.vertical : Orientation.horizontal;
-					post(() -> buttonPressListener.onLabelPressed(Button.rotate));
-				} else if (label1pressed) {
-					post(() -> buttonPressListener.onLabelPressed(Button.start));
-				} else if (label2pressed) {
-					post(() -> buttonPressListener.onLabelPressed(Button.end));
-				}
+            if (action == MotionEvent.ACTION_DOWN) {
+                label1down = pos < maxLabel1sz + startInset;
+                label2down = pos > length - maxLabel2sz - endInset;
+                rotatedown = pos >= (length - rotatelength) * 0.5f && pos <= (length + rotatelength) * 0.5f;
+            }
 
-				if (rotatepressed || label1pressed || label2pressed) {
-					post(() -> {
-						rotatedown = label1down = label2down = false;
-						postInvalidate();
-					});
-				}
-			}
+            if (action == MotionEvent.ACTION_UP && buttonPressListener != null) {
+                label1pressed = label1down && pos < maxLabel1sz + startInset;
+                label2pressed = label2down && pos > length - maxLabel2sz - endInset;
+                rotatepressed = rotatedown && pos >= (length - rotatelength) * 0.5f && pos <= (length + rotatelength) * 0.5f;
 
-			if ((action == MotionEvent.ACTION_UP && !label1pressed && !label2pressed && !rotatepressed) || action == MotionEvent.ACTION_CANCEL) {
-				label1down = label1pressed = false;
-				label2down = label2pressed = false;
-				rotatedown = rotatepressed = false;
-			}
-		}
+                if (rotatepressed) {
+                    orientation = orientation == Orientation.horizontal ? Orientation.vertical : Orientation.horizontal;
+                    post(() -> buttonPressListener.onLabelPressed(Button.rotate));
+                } else if (label1pressed) {
+                    post(() -> buttonPressListener.onLabelPressed(Button.start));
+                } else if (label2pressed) {
+                    post(() -> buttonPressListener.onLabelPressed(Button.end));
+                }
 
-		final boolean res = super.onTouchEvent(event);
-		postInvalidate();
-		return res;
-	}
+                if (rotatepressed || label1pressed || label2pressed) {
+                    post(() -> {
+                        rotatedown = label1down = label2down = false;
+                        postInvalidate();
+                    });
+                }
+            }
 
-	@Override protected void onDraw(@NonNull Canvas canvas) {
-		// DO NOT CALL super.onDraw(canvas);
+            if ((action == MotionEvent.ACTION_UP && !label1pressed && !label2pressed && !rotatepressed) || action == MotionEvent.ACTION_CANCEL) {
+                label1down = label1pressed = false;
+                label2down = label2pressed = false;
+                rotatedown = rotatepressed = false;
+            }
+        }
 
-		// always draw unpressed bg color first
-		canvas.drawColor(primaryColor);
+        final boolean res = super.onTouchEvent(event);
+        postInvalidate();
+        return res;
+    }
 
-		// meaning changes according to orientation
-		final int length;
-		final int thickness;
-		if (orientation == Orientation.vertical) {
-			length = getWidth();
-			thickness = getHeight();
-		} else {
-			length = getHeight();
-			thickness = getWidth();
-		}
+    @Override
+    protected void onDraw(@NonNull Canvas canvas) {
+        // DO NOT CALL super.onDraw(canvas);
 
-		final float bezelThickness = 1.5f * density;
+        // always draw unpressed bg color first
+        canvas.drawColor(primaryColor);
 
-		// draw bezel only when vertical
-		if (orientation == Orientation.vertical) {
-			bezelPaint.setColor(0xff111111);
-			canvas.drawRect(0, thickness - (int) (bezelThickness + 0.5f), length, thickness, bezelPaint);
-		}
+        // meaning changes according to orientation
+        final int length;
+        final int thickness;
+        if (orientation == Orientation.vertical) {
+            length = getWidth();
+            thickness = getHeight();
+        } else {
+            length = getHeight();
+            thickness = getWidth();
+        }
 
-		if (label1down || label2down || rotatedown) {
+        if (label1down || label2down || rotatedown) {
 
-			if (rotatedown) {
-				final float cl = length * 0.5f;
-				final float ct = thickness * 0.5f;
-				final float r = rotatelength * 0.75f;
+            if (rotatedown) {
+                final float cl = length * 0.5f;
+                final float ct = thickness * 0.5f;
+                final float r = rotatelength * 1.5f;
 
-				if (orientation == Orientation.vertical) canvas.drawCircle(cl, ct, r, accentColorPaint);
-				else canvas.drawCircle(ct, cl, r, accentColorPaint);
-			} else {
-				canvas.save();
+                if (orientation == Orientation.vertical) canvas.drawCircle(cl, ct, r, accentColorPaint);
+                else canvas.drawCircle(ct, cl, r, accentColorPaint);
+            } else {
+                canvas.save();
 
-				if (label1down) {
-					if (orientation == Orientation.vertical) canvas.clipRect(0, 0, label1length, thickness);
-					else canvas.clipRect(0, 0, thickness, label1length);
-				} else if (label2down) {
-					final float fr1 = length - label2length;
-					if (orientation == Orientation.vertical) canvas.clipRect(fr1, 0, length, thickness);
-					else canvas.clipRect(0, fr1, thickness, length);
-				}
+                if (label1down) {
+                    if (orientation == Orientation.vertical) canvas.clipRect(0, 0, label1length + leftInset, thickness);
+                    else canvas.clipRect(0, 0, thickness, label1length + topInset);
+                } else if (label2down) {
+                    if (orientation == Orientation.vertical) canvas.clipRect(length - label2length - rightInset, 0, length, thickness);
+                    else canvas.clipRect(0, length - label2length - bottomInset, thickness, length);
+                }
 
-				canvas.drawColor(accentColor);
-				canvas.restore();
-			}
-		} else {
-			if (isPressed()) { // not label1 nor label2
-				canvas.drawColor(accentColor);
-			}
-		}
+                canvas.drawColor(accentColor);
+                canvas.restore();
+            }
+        } else {
+            if (isPressed()) { // not label1 nor label2
+                canvas.drawColor(accentColor);
+            }
+        }
 
-		final float pad = 8.f * density;
-		final float base = thickness * 0.5f + textSize * density * 0.3f;
+        final float pad = 8.f * density;
+        final float base = thickness * 0.5f + textSize * density * 0.3f;
 
-		if (label1 != null) {
-			if (orientation == Orientation.horizontal) {
-				canvas.save();
-				canvas.rotate(-90);
+        if (label1 != null) {
+            if (orientation == Orientation.horizontal) {
+                canvas.save();
+                canvas.rotate(-90);
 
-				labelPaint.setTextAlign(Paint.Align.RIGHT);
-				canvas.drawText(label1, -pad, base + bezelThickness * 0.5f, labelPaint);
+                labelPaint.setTextAlign(Paint.Align.RIGHT);
+                canvas.drawText(label1, -pad - topInset, base, labelPaint);
 
-				canvas.restore();
-			} else {
-				labelPaint.setTextAlign(Paint.Align.LEFT);
-				canvas.drawText(label1, pad, base, labelPaint);
-			}
+                canvas.restore();
+            } else {
+                labelPaint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText(label1, pad + leftInset, base, labelPaint);
+            }
 
-			label1length = 16 * density + labelPaint.measureText(label1);
-		}
+            label1length = 16 * density + labelPaint.measureText(label1);
+        }
 
-		if (label2 != null) {
-			if (orientation == Orientation.horizontal) {
-				canvas.save();
-				canvas.rotate(-90);
+        if (label2 != null) {
+            if (orientation == Orientation.horizontal) {
+                canvas.save();
+                canvas.rotate(-90);
 
-				labelPaint.setTextAlign(Paint.Align.LEFT);
-				canvas.drawText(label2, -length + pad, base + bezelThickness * 0.5f, labelPaint);
+                labelPaint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText(label2, -length + pad + bottomInset, base, labelPaint);
 
-				canvas.restore();
-			} else {
-				labelPaint.setTextAlign(Paint.Align.RIGHT);
-				canvas.drawText(label2, length - pad, base, labelPaint);
-			}
+                canvas.restore();
+            } else {
+                labelPaint.setTextAlign(Paint.Align.RIGHT);
+                canvas.drawText(label2, length - pad - rightInset, base, labelPaint);
+            }
 
-			label2length = 16.f * density + labelPaint.measureText(label2);
-		}
+            label2length = 16.f * density + labelPaint.measureText(label2);
+        }
 
-		{
-			final Bitmap splitBitmap = orientation == Orientation.vertical ? getSplitHorizontalBitmap() : getSplitVerticalBitmap();
-			final float cl = length * 0.5f;
-			final float ct = thickness * 0.5f;
+        {
+            final Drawable splitDrawable = orientation == Orientation.vertical ? getSplitHorizontalDrawable() : getSplitVerticalDrawable();
+            final int w = splitDrawable.getIntrinsicWidth();
+            final int h = splitDrawable.getIntrinsicHeight();
+            final float cl = length * 0.5f;
+            final float ct = thickness * 0.5f;
+            final int left = Math.round(orientation == Orientation.vertical ? cl - w * 0.5f : ct - w * 0.5f);
+            final int top = Math.round(orientation == Orientation.vertical ? ct - h * 0.5f : cl - h * 0.5f);
 
-			if (orientation == Orientation.vertical) canvas.drawBitmap(splitBitmap, cl - splitBitmap.getWidth() * 0.5f, ct - splitBitmap.getHeight() * 0.5f, null);
-			else canvas.drawBitmap(splitBitmap, ct - splitBitmap.getWidth() * 0.5f, cl - splitBitmap.getHeight() * 0.5f, null);
-		}
-	}
+            splitDrawable.setBounds(left, top, left + w, top + h);
+            splitDrawable.draw(canvas);
+        }
+    }
 
-	private Bitmap getSplitVerticalBitmap() {
-		if (splitVerticalBitmap == null) {
-			splitVerticalBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.ic_split_vertical);
-		}
-		return splitVerticalBitmap;
-	}
+    private Drawable getSplitVerticalDrawable() {
+        if (splitVerticalDrawable == null) {
+            splitVerticalDrawable = Objects.requireNonNull(AppCompatResources.getDrawable(getContext(), R.drawable.ic_split_vertical));
+        }
+        return splitVerticalDrawable;
+    }
 
-	private Bitmap getSplitHorizontalBitmap() {
-		if (splitHorizontalBitmap == null) {
-			splitHorizontalBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.ic_split_horizontal);
-		}
-		return splitHorizontalBitmap;
-	}
+    private Drawable getSplitHorizontalDrawable() {
+        if (splitHorizontalDrawable == null) {
+            splitHorizontalDrawable = Objects.requireNonNull(AppCompatResources.getDrawable(getContext(), R.drawable.ic_split_horizontal));
+        }
+        return splitHorizontalDrawable;
+    }
 
-	@Override
-	protected void onAttachedToWindow() {
-		super.onAttachedToWindow();
-		App.getLbm().registerReceiver(nightModeChangedListener, new IntentFilter(IsiActivity.ACTION_NIGHT_MODE_CHANGED));
-	}
-
-	@Override
-	protected void onDetachedFromWindow() {
-		super.onDetachedFromWindow();
-		App.getLbm().unregisterReceiver(nightModeChangedListener);
-	}
-
-	final BroadcastReceiver nightModeChangedListener = new BroadcastReceiver() {
-		@Override
-		public void onReceive(final Context context, final Intent intent) {
-			initializePrimaryColor();
-			invalidate();
-		}
-	};
-
-	private void initializePrimaryColor() {
-		if (Preferences.getBoolean(Prefkey.is_night_mode, false)) {
-			primaryColor = ResourcesCompat.getColor(getResources(), R.color.primary_night_mode, getContext().getTheme());
-		} else {
-			primaryColor = ResourcesCompat.getColor(getResources(), R.color.primary, getContext().getTheme());
-		}
-	}
+    void initializePrimaryColor() {
+        if (Preferences.getBoolean(Prefkey.is_night_mode, false)) {
+            primaryColor = ResourcesCompat.getColor(getResources(), R.color.primary_night_mode, getContext().getTheme());
+        } else {
+            primaryColor = ResourcesCompat.getColor(getResources(), R.color.primary, getContext().getTheme());
+        }
+    }
 }

@@ -2,381 +2,316 @@ package yuku.alkitab.base.storage;
 
 import android.content.ContentValues;
 import android.database.Cursor;
-import android.database.DatabaseUtils;
-import android.database.DatabaseUtils.InsertHelper;
 import android.database.sqlite.SQLiteDatabase;
 import android.os.Parcel;
-import android.support.annotation.Nullable;
 import android.util.Pair;
-import yuku.alkitab.base.util.SongBookUtil;
-import yuku.alkitab.base.util.SongFilter;
-import yuku.alkitab.base.util.SongFilter.CompiledFilter;
-import yuku.alkitab.base.util.Sqlitil;
-import yuku.alkitab.model.SongInfo;
-import yuku.kpri.model.Song;
-
+import androidx.annotation.Nullable;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-
 import static yuku.alkitab.base.util.Literals.Array;
-import static yuku.alkitab.base.util.Literals.ToStringArray;
+import yuku.afw.App;
+import yuku.alkitab.base.storage.room.SongBookInfoEntity;
+import yuku.alkitab.base.storage.room.SongInfoEntity;
+import yuku.alkitab.base.storage.room.SongInfoMetaRow;
+import yuku.alkitab.base.storage.room.SongRoomDao;
+import yuku.alkitab.base.storage.room.SongRoomDatabase;
+import yuku.alkitab.base.util.AppLog;
+import yuku.alkitab.base.util.Background;
+import yuku.alkitab.base.util.Sqlitil;
+import yuku.alkitab.songs.SongBookUtil;
+import yuku.alkitab.songs.SongFilter;
+import yuku.alkitab.songs.SongFilter.CompiledFilter;
+import yuku.alkitab.songs.SongInfo;
+import yuku.alkitab.songs.newdoc.LegacyParcelDecoder;
+import yuku.alkitab.songs.newdoc.LegacySongConverter;
+import yuku.alkitab.songs.newdoc.SongDocument;
+import yuku.alkitab.songs.newdoc.SongDocumentJson;
+import yuku.kpri.model.Song;
 
+/**
+ * Facade over the Room-backed {@link SongRoomDao} carrying the
+ * {@code SongInfo} / {@code SongBookInfo} surface its call sites expect.
+ *
+ * <p>The {@link SongDbHelper} passed to the constructor is unused:
+ * {@link SongRoomDatabase} owns the SQLite file, and the one-time copy out of
+ * the legacy file runs in {@code SongDbDataMigration}.
+ *
+ * <p>{@link #writeDocument} always writes UTF-8 JSON, while
+ * {@link #readDocument} dispatches on the row's {@code dataFormatVersion} and
+ * rewrites a legacy Parcelable row as JSON the first time it is read.
+ */
 public class SongDb {
-	public static final String TAG = SongDb.class.getSimpleName();
+    @SuppressWarnings("unused") // kept for ABI parity with the pre-Room constructor
+    private final SongDbHelper helper;
 
-	private SongDbHelper helper;
+    // Double-checked locking: `SongRoomDatabase.get` is itself thread-safe and
+    // returns the same singleton, so a double init is harmless, but without
+    // `volatile` the JMM could publish a partially-initialised reference.
+    private volatile SongRoomDao cachedRoomDao;
 
-	public SongDb(SongDbHelper helper) {
-		this.helper = helper;
-	}
-	
-	private static byte[] marshallSong(Song song, int dataFormatVersion) {
-		Parcel p = Parcel.obtain();
-		song.writeToParcelCompat(dataFormatVersion, p, 0);
-		byte[] buf = p.marshall();
-		p.recycle();
-		return buf;
-	}
-	
-	private static Song unmarshallSong(byte[] buf, int dataFormatVersion) {
-		Parcel p = Parcel.obtain();
-		p.unmarshall(buf, 0, buf.length);
-		p.setDataPosition(0);
-		Song res = Song.createFromParcelCompat(dataFormatVersion, p);
-		p.recycle();
-		return res;
-	}
+    public SongDb(SongDbHelper helper) {
+        this.helper = helper;
+    }
 
-	/**
-	 * Store to db songs in a book. Before the songs are stored, all songs of the specified book are deleted.
-	 */
-	public void storeSongs(String bookName, List<Song> songs, int dataFormatVersion) {
-		SQLiteDatabase db = helper.getWritableDatabase();
-		db.beginTransactionNonExclusive();
-		try {
-			// remove existing songs from the same book if any
-			db.delete(Table.SongInfo.tableName(),
-				Table.SongInfo.bookName + "=? and " + Table.SongInfo.dataFormatVersion + "=?",
-				ToStringArray(bookName, dataFormatVersion)
-			);
+    private SongRoomDao roomDao() {
+        SongRoomDao result = cachedRoomDao;
+        if (result == null) {
+            synchronized (this) {
+                result = cachedRoomDao;
+                if (result == null) {
+                    result = SongRoomDatabase.get(App.context).songRoomDao();
+                    cachedRoomDao = result;
+                }
+            }
+        }
+        return result;
+    }
 
-			int ordering = 1; // ordering of the songs for display
-			
-			// insert new ones
-			@SuppressWarnings("deprecation") final InsertHelper ih = new InsertHelper(db, Table.SongInfo.tableName());
-			
-			int col_bookName = ih.getColumnIndex(Table.SongInfo.bookName.name());
-			int col_code = ih.getColumnIndex(Table.SongInfo.code.name());
-			int col_title = ih.getColumnIndex(Table.SongInfo.title.name());
-			int col_title_original = ih.getColumnIndex(Table.SongInfo.title_original.name());
-			int col_ordering = ih.getColumnIndex(Table.SongInfo.ordering.name());
-			int col_dataFormatVersion = ih.getColumnIndex(Table.SongInfo.dataFormatVersion.name());
-			int col_data = ih.getColumnIndex(Table.SongInfo.data.name());
-			int col_updateTime = ih.getColumnIndex(Table.SongInfo.updateTime.name());
+    private static byte[] writeDocument(SongDocument doc) {
+        return SongDocumentJson.encode(doc).getBytes(StandardCharsets.UTF_8);
+    }
 
-			for (Song song: songs) {
-				ih.prepareForInsert();
-				ih.bind(col_bookName, bookName);
-				ih.bind(col_code, song.code);
-				ih.bind(col_title, song.title);
-				ih.bind(col_title_original, song.title_original);
-				ih.bind(col_ordering, ordering++);
-				ih.bind(col_dataFormatVersion, dataFormatVersion);
-				ih.bind(col_data, marshallSong(song, dataFormatVersion));
-				ih.bind(col_updateTime, Sqlitil.nowDateTime());
-				ih.execute();
-			}
-			
-			db.setTransactionSuccessful();
-		} finally {
-			db.endTransaction();
-		}
-	}
-	
-	public Song getSong(String bookName, String code) {
-		SQLiteDatabase db = helper.getReadableDatabase();
-		
-		String[] columns = new String[] {
-		Table.SongInfo.data.name(), // 0
-		Table.SongInfo.dataFormatVersion.name(), // 1
-		};
-		
-		Cursor c = db.query(Table.SongInfo.tableName(),
-			columns,
-			Table.SongInfo.bookName + "=? and " + Table.SongInfo.code + "=?",
-			new String[]{bookName, code},
-			null, null, null);
-		
-		try {
-			if (c.moveToNext()) {
-				byte[] data = c.getBlob(0);
-				int dataFormatVersion = c.getInt(1);
-				return unmarshallSong(data, dataFormatVersion);
-			} else {
-				return null;
-			}
-		} finally {
-			c.close();
-		}
-	}
-	
-	public boolean songExists(String bookName, String code) {
-		SQLiteDatabase db = helper.getReadableDatabase();
-		
-		Cursor c = db.rawQuery("select count(*) from " + Table.SongInfo.tableName() + " where "
-				+ Table.SongInfo.bookName + "=? and " + Table.SongInfo.code + "=?",
-			new String[]{bookName, code});
+    /**
+     * Fallback for a wire shape {@link LegacyParcelDecoder} does not recognise.
+     * Works as long as the OS has not changed since the row was written.
+     */
+    private static Song unmarshallLegacySongViaPlatformParcel(byte[] buf, int dataFormatVersion) {
+        Parcel p = Parcel.obtain();
+        p.unmarshall(buf, 0, buf.length);
+        p.setDataPosition(0);
+        Song res = Song.createFromParcelCompat(dataFormatVersion, p);
+        p.recycle();
+        return res;
+    }
 
-		try {
-			if (c.moveToNext()) {
-				return c.getInt(0) > 0;
-			} else {
-				return false;
-			}
-		} finally {
-			c.close();
-		}
-	}
-	
-	public Song getFirstSongFromBook(String bookName) {
-		SQLiteDatabase db = helper.getReadableDatabase();
-		
-		String[] columns = new String[] { // column indexes!
-		Table.SongInfo.data.name(), // 0
-		Table.SongInfo.dataFormatVersion.name(), // 1
-		};
-		
-		Cursor c = db.query(Table.SongInfo.tableName(),
-			columns,
-			Table.SongInfo.bookName + "=?",
-			new String[]{bookName},
-			null, null, Table.SongInfo.ordering + " asc", "1");
-		
-		try {
-			if (c.moveToNext()) {
-				byte[] data = c.getBlob(0); 
-				int dataFormatVersion = c.getInt(1); 
-				return unmarshallSong(data, dataFormatVersion);
-			} else {
-				return null;
-			}
-		} finally {
-			c.close();
-		}
-	}
+    /**
+     * Dispatches JSON vs. legacy Parcelable by {@code dataFormatVersion}. A
+     * converted legacy row is written back as JSON, so it converts at most once.
+     */
+    private SongDocument readDocument(long id, String bookName, String code, byte[] data, int dataFormatVersion) {
+        if (dataFormatVersion == SongDocumentJson.DATA_FORMAT_VERSION) {
+            return SongDocumentJson.decode(new String(data, StandardCharsets.UTF_8));
+        }
 
-	/**
-	 * @return null if there is no song at all
-	 */
-	@Nullable public Pair<String /* bookName */, Song> getAnySong() {
-		final SQLiteDatabase db = helper.getReadableDatabase();
-		try (Cursor c = db.query(Table.SongInfo.tableName(), ToStringArray(Table.SongInfo.bookName, Table.SongInfo.data, Table.SongInfo.dataFormatVersion), null, null, null, null, Table.SongInfo.bookName + " asc, " + Table.SongInfo.ordering + " asc", "1")) {
-			if (c.moveToNext()) {
-				final String bookName = c.getString(0);
-				final byte[] data = c.getBlob(1);
-				final int dataFormatVersion = c.getInt(2);
-				final Song song = unmarshallSong(data, dataFormatVersion);
-				return Pair.create(bookName, song);
-			} else {
-				return null;
-			}
-		}
-	}
+        Song legacySong;
+        try {
+            legacySong = LegacyParcelDecoder.decode(data, dataFormatVersion);
+        } catch (Exception e) {
+            AppLog.e("SongDb", "LegacyParcelDecoder failed for book=" + bookName + " code=" + code + "; falling back to Parcel.unmarshall", e);
+            legacySong = unmarshallLegacySongViaPlatformParcel(data, dataFormatVersion);
+        }
 
-	public List<SongInfo> listSongInfosByBookName(String bookName) {
-		SQLiteDatabase db = helper.getReadableDatabase();
-		List<SongInfo> res = new ArrayList<>();
+        final SongDocument doc = LegacySongConverter.convert(legacySong);
+        // This helper runs on the caller's thread, including the main thread and, in a tight
+        // loop, the deep-filter scan. Fire the UPDATE on a background thread so a book full of
+        // legacy songs cannot stall the UI or a search.
+        final byte[] jsonBytes = writeDocument(doc);
+        Background.run(() -> roomDao().writeBackJsonSongData(id, jsonBytes));
+        return doc;
+    }
 
-		String[] columns = { // column indexes!
-		Table.SongInfo.bookName.name(), // 0
-		Table.SongInfo.code.name(), // 1
-		Table.SongInfo.title.name(), // 2
-		Table.SongInfo.title_original.name(), // 3
-		};
-	
-		Cursor c = querySongs(db, columns, bookName);
-		try {
-			while (c.moveToNext()) {
-				String bookName2 = c.getString(0);
-				String code = c.getString(1);
-				String title = c.getString(2);
-				String title_original = c.getString(3);
-				res.add(new SongInfo(bookName2, code, title, title_original));
-			}
-		} finally {
-			c.close();
-		}
-		
-		return res;
-	}
+    /**
+     * Deletes every song of the book first, at any {@code dataFormatVersion}, so
+     * updating a mixed-version book leaves no stale rows behind.
+     */
+    public void storeSongs(String bookName, List<SongDocument> docs) {
+        final int updateTime = Sqlitil.nowDateTime();
+        final List<SongInfoEntity> entities = new ArrayList<>(docs.size());
+        int ordering = 1;
+        for (SongDocument doc : docs) {
+            entities.add(new SongInfoEntity(
+                0L,
+                bookName,
+                doc.getCode(),
+                doc.getMeta().getTitle(),
+                doc.getMeta().getTitle_original(),
+                ordering++,
+                SongDocumentJson.DATA_FORMAT_VERSION,
+                writeDocument(doc),
+                updateTime
+            ));
+        }
+        roomDao().replaceSongsForBookName(bookName, entities);
+    }
 
-	public List<SongInfo> listSongInfosByBookNameAndDeepFilter(String bookName, String filter_string) {
-		SQLiteDatabase db = helper.getReadableDatabase();
-		
-		List<SongInfo> res = new ArrayList<>();
+    public SongDocument getSong(String bookName, String code) {
+        final SongInfoEntity row = roomDao().findSongInfoByBookNameAndCode(bookName, code);
+        if (row == null || row.getData() == null) {
+            return null;
+        }
+        return readDocument(row.get_id(), row.getBookName(), row.getCode(), row.getData(), row.getDataFormatVersion());
+    }
 
-		String[] columns = { // column indexes!
-		Table.SongInfo.bookName.name(), // 0
-		Table.SongInfo.code.name(), // 1
-		Table.SongInfo.title.name(), // 2
-		Table.SongInfo.title_original.name(), // 3
-		Table.SongInfo.data.name(), // 4
-		Table.SongInfo.dataFormatVersion.name(), // 5
-		};
-		
-		CompiledFilter cf = SongFilter.compileFilter(filter_string);
-		
-		Cursor c = querySongs(db, columns, bookName);
-		try {
-			while (c.moveToNext()) {
-				String bookName2 = c.getString(0);
-				String code = c.getString(1);
-				String title = c.getString(2);
-				String title_original = c.getString(3);
-				byte[] data = c.getBlob(4);
-				int dataFormatVersion = c.getInt(5);
-				
-				Song song = unmarshallSong(data, dataFormatVersion);
-				if (SongFilter.match(song, cf)) {
-					res.add(new SongInfo(bookName2, code, title, title_original));
-				}
-			}
-		} finally {
-			c.close();
-		}
-		
-		return res;
-	}
+    public boolean songExists(String bookName, String code) {
+        return roomDao().countSongInfosByBookNameAndCode(bookName, code) > 0;
+    }
 
-	private static Cursor querySongs(SQLiteDatabase db, String[] columns, String bookName) {
-		Cursor c;
-		if (bookName == null) {
-			c = db.query(Table.SongInfo.tableName(), 
-			columns, 
-			null, 
-			null, 
-			null, null, Table.SongInfo.bookName + " asc, " + Table.SongInfo.ordering + " asc");
-		} else {
-			c = db.query(Table.SongInfo.tableName(), 
-			columns, 
-			Table.SongInfo.bookName + "=?",
-			new String[] {bookName},
-			null, null, Table.SongInfo.ordering + " asc");
-		}
-		return c;
-	}
+    public SongDocument getFirstSongFromBook(String bookName) {
+        final SongInfoEntity row = roomDao().findFirstSongInfoByBookName(bookName);
+        if (row == null || row.getData() == null) {
+            return null;
+        }
+        return readDocument(row.get_id(), row.getBookName(), row.getCode(), row.getData(), row.getDataFormatVersion());
+    }
 
-	/**
-	 * Delete song book together with its songs.
-	 * @return number of songs deleted
-	 */
-	public int deleteSongBook(final String songBookName) {
-		final SQLiteDatabase db = helper.getWritableDatabase();
-		db.beginTransactionNonExclusive();
-		try {
-			// delete song book
-			db.delete(Table.SongBookInfo.tableName(), Table.SongBookInfo.name + "=?", Array(songBookName));
+    /**
+     * @return null if there is no song at all
+     */
+    @Nullable
+    public Pair<String /* bookName */, SongDocument> getAnySong() {
+        final SongInfoEntity row = roomDao().findAnySongInfo();
+        if (row == null || row.getData() == null || row.getBookName() == null) {
+            return null;
+        }
+        return Pair.create(row.getBookName(), readDocument(row.get_id(), row.getBookName(), row.getCode(), row.getData(), row.getDataFormatVersion()));
+    }
 
-			// delete songs
-			final int count = db.delete(Table.SongInfo.tableName(), Table.SongInfo.bookName + "=?", Array(songBookName));
+    public List<SongInfo> listSongInfosByBookName(@Nullable String bookName) {
+        // Null bookName means "All song books", the song list's book selector.
+        final List<SongInfoMetaRow> rows = (bookName == null)
+            ? roomDao().listAllSongInfoMetas()
+            : roomDao().listSongInfoMetasByBookName(bookName);
+        final List<SongInfo> res = new ArrayList<>(rows.size());
+        for (SongInfoMetaRow row : rows) {
+            res.add(new SongInfo(row.getBookName(), row.getCode(), row.getTitle(), row.getTitle_original()));
+        }
+        return res;
+    }
 
-			db.setTransactionSuccessful();
+    public List<SongInfo> listSongInfosByBookNameAndDeepFilter(String bookName, String filter_string) {
+        final CompiledFilter cf = SongFilter.compileFilter(filter_string);
+        // Streams through a Cursor, because a Room-returned List would hold the
+        // whole catalogue in memory when bookName is null. See SongRoomDao.
+        final List<SongInfo> res = new ArrayList<>();
+        try (Cursor c = (bookName == null)
+            ? roomDao().queryAllDeepFilterRows()
+            : roomDao().queryDeepFilterRowsByBookName(bookName)) {
+            final int colId = c.getColumnIndexOrThrow("_id");
+            final int colBookName = c.getColumnIndexOrThrow("bookName");
+            final int colCode = c.getColumnIndexOrThrow("code");
+            final int colTitle = c.getColumnIndexOrThrow("title");
+            final int colTitleOriginal = c.getColumnIndexOrThrow("title_original");
+            final int colData = c.getColumnIndexOrThrow("data");
+            final int colDataFormatVersion = c.getColumnIndexOrThrow("dataFormatVersion");
+            while (c.moveToNext()) {
+                if (c.isNull(colData)) {
+                    continue;
+                }
+                final long id = c.getLong(colId);
+                final String rowBookName = c.isNull(colBookName) ? null : c.getString(colBookName);
+                final String rowCode = c.isNull(colCode) ? null : c.getString(colCode);
+                final byte[] data = c.getBlob(colData);
+                final int dataFormatVersion = c.getInt(colDataFormatVersion);
+                // Read out of the row before writing back, so the write-back UPDATE (issued at most
+                // once per legacy row, inside readDocument) doesn't fight this streaming Cursor.
+                final SongDocument doc = readDocument(id, rowBookName, rowCode, data, dataFormatVersion);
+                if (SongFilter.match(doc, cf)) {
+                    res.add(new SongInfo(
+                        rowBookName,
+                        rowCode,
+                        c.isNull(colTitle) ? null : c.getString(colTitle),
+                        c.isNull(colTitleOriginal) ? null : c.getString(colTitleOriginal),
+                        // preview up to 2 matching lyric lines under the result (deep search only)
+                        SongFilter.findLyricSnippet(doc, cf, 2)
+                    ));
+                }
+            }
+        }
+        return res;
+    }
 
-			return count;
-		} finally {
-			db.endTransaction();
-			db.execSQL("vacuum");
-		}
-	}
+    /** @return number of songs deleted */
+    public int deleteSongBook(final String songBookName) {
+        final int count = roomDao().deleteSongBookAndSongs(songBookName);
+        // Reclaims the space a song book's worth of rows used. Room cannot
+        // VACUUM inside a transaction, so this runs after the DAO's commits.
+        SongRoomDatabase.get(App.context).getOpenHelper().getWritableDatabase().execSQL("vacuum");
+        return count;
+    }
 
-	@Nullable
-	public SongBookUtil.SongBookInfo getSongBookInfo(final String name) {
-		final SQLiteDatabase db = helper.getReadableDatabase();
-		return getSongBookInfo(db, name);
-	}
+    @Nullable
+    public SongBookUtil.SongBookInfo getSongBookInfo(final String name) {
+        final SongBookInfoEntity row = roomDao().findSongBookInfoByName(name);
+        if (row == null) {
+            return null;
+        }
+        final SongBookUtil.SongBookInfo res = new SongBookUtil.SongBookInfo();
+        res.name = row.getName();
+        res.title = row.getTitle();
+        res.copyright = row.getCopyright();
+        return res;
+    }
 
-	/**
-	 * For migration
-	 */
-	public static SongBookUtil.SongBookInfo getSongBookInfo(final SQLiteDatabase db, final String name) {
-		final Cursor c = db.query(Table.SongBookInfo.tableName(), null, Table.SongBookInfo.name + "=?", Array(name), null, null, null);
-		try {
-			if (c.moveToNext()) {
-				final SongBookUtil.SongBookInfo res = new SongBookUtil.SongBookInfo();
-				res.name = name;
-				res.title = c.getString(c.getColumnIndexOrThrow(Table.SongBookInfo.title.name()));
-				res.copyright = c.getString(c.getColumnIndexOrThrow(Table.SongBookInfo.copyright.name()));
-				return res;
-			}
-			return null;
-		} finally {
-			c.close();
-		}
-	}
+    public List<SongBookUtil.SongBookInfo> listSongBookInfos() {
+        final List<SongBookInfoEntity> rows = roomDao().listAllSongBookInfos();
+        final List<SongBookUtil.SongBookInfo> res = new ArrayList<>(rows.size());
+        for (SongBookInfoEntity row : rows) {
+            final SongBookUtil.SongBookInfo info = new SongBookUtil.SongBookInfo();
+            info.name = row.getName();
+            info.title = row.getTitle();
+            info.copyright = row.getCopyright();
+            res.add(info);
+        }
+        return res;
+    }
 
-	public List<SongBookUtil.SongBookInfo> listSongBookInfos() {
-		final SQLiteDatabase db = helper.getReadableDatabase();
-		final Cursor c = db.query(Table.SongBookInfo.tableName(), null, null, null, null, null, Table.SongBookInfo.name + " asc");
-		try {
-			final int col_name = c.getColumnIndexOrThrow(Table.SongBookInfo.name.name());
-			final int col_title = c.getColumnIndexOrThrow(Table.SongBookInfo.title.name());
-			final int col_copyright = c.getColumnIndexOrThrow(Table.SongBookInfo.copyright.name());
+    public int countSongBookInfos() {
+        return roomDao().countAllSongBookInfos();
+    }
 
-			final List<SongBookUtil.SongBookInfo> res = new ArrayList<>();
-			while (c.moveToNext()) {
-				final SongBookUtil.SongBookInfo info = new SongBookUtil.SongBookInfo();
-				info.name = c.getString(col_name);
-				info.title = c.getString(col_title);
-				info.copyright = c.getString(col_copyright);
-				res.add(info);
-			}
+    /**
+     * Insert a songbook info row. An existing songbook with the same name, if exists, will be deleted.
+     */
+    public void insertSongBookInfo(final SongBookUtil.SongBookInfo info) {
+        roomDao().insertOrReplaceSongBookInfo(info.name, info.title, info.copyright);
+    }
 
-			return res;
-		} finally {
-			c.close();
-		}
-	}
+    public int getSongUpdateTime(final String bookName, final String code) {
+        final Integer res = roomDao().findUpdateTimeByBookNameAndCode(bookName, code);
+        return res == null ? 0 : res;
+    }
 
-	public int countSongBookInfos() {
-		final SQLiteDatabase db = helper.getReadableDatabase();
-		return (int) DatabaseUtils.queryNumEntries(db, Table.SongBookInfo.tableName());
-	}
+    /**
+     * Legacy-only helper that reads a song-book row from the pre-Room
+     * {@code SongDb} SQLite file. Used by {@link SongDbHelper#onUpgrade}'s
+     * 4.1-beta2 upgrade path to back-fill {@code SongBookInfo} from the
+     * pre-existing {@code SongInfo} table — that upgrade still has to run
+     * before {@code SongDbDataMigration} copies the result into Room.
+     * Not a Room-aware path.
+     */
+    public static SongBookUtil.SongBookInfo getSongBookInfo(final SQLiteDatabase db, final String name) {
+        try (Cursor c = db.query(Table.SongBookInfo.tableName(), null, Table.SongBookInfo.name + "=?", Array(name), null, null, null)) {
+            if (c.moveToNext()) {
+                final SongBookUtil.SongBookInfo res = new SongBookUtil.SongBookInfo();
+                res.name = name;
+                res.title = c.getString(c.getColumnIndexOrThrow(Table.SongBookInfo.title.name()));
+                res.copyright = c.getString(c.getColumnIndexOrThrow(Table.SongBookInfo.copyright.name()));
+                return res;
+            }
+            return null;
+        }
+    }
 
-	/**
-	 * Insert a songbook info row. An existing songbook with the same name, if exists, will be deleted.
-	 */
-	public void insertSongBookInfo(final SongBookUtil.SongBookInfo info) {
-		final SQLiteDatabase db = helper.getWritableDatabase();
-		insertSongBookInfo(db, info);
-	}
+    /**
+     * Legacy-only helper that writes a song-book row to the pre-Room
+     * {@code SongDb} SQLite file. Used by {@link SongDbHelper#onUpgrade}.
+     * Not a Room-aware path.
+     */
+    static void insertSongBookInfo(final SQLiteDatabase db, final SongBookUtil.SongBookInfo info) {
+        db.beginTransactionNonExclusive();
+        try {
+            db.delete(Table.SongBookInfo.tableName(), Table.SongBookInfo.name + "=?", Array(info.name));
 
-	/**
-	 * For migration
-	 */
-	static void insertSongBookInfo(final SQLiteDatabase db, final SongBookUtil.SongBookInfo info) {
-		db.beginTransactionNonExclusive();
-		try {
-			db.delete(Table.SongBookInfo.tableName(), Table.SongBookInfo.name + "=?", Array(info.name));
+            final ContentValues cv = new ContentValues();
+            cv.put(Table.SongBookInfo.name.name(), info.name);
+            cv.put(Table.SongBookInfo.title.name(), info.title);
+            cv.put(Table.SongBookInfo.copyright.name(), info.copyright);
+            db.insert(Table.SongBookInfo.tableName(), null, cv);
 
-			final ContentValues cv = new ContentValues();
-			cv.put(Table.SongBookInfo.name.name(), info.name);
-			cv.put(Table.SongBookInfo.title.name(), info.title);
-			cv.put(Table.SongBookInfo.copyright.name(), info.copyright);
-			db.insert(Table.SongBookInfo.tableName(), null, cv);
-
-			db.setTransactionSuccessful();
-		} finally {
-			db.endTransaction();
-		}
-	}
-
-	public int getDataFormatVersionForSongs(final String bookName) {
-		final SQLiteDatabase db = helper.getReadableDatabase();
-		return (int) DatabaseUtils.longForQuery(db, "select " + Table.SongInfo.dataFormatVersion + " from " + Table.SongInfo.tableName() + " where " + Table.SongInfo.bookName + "=? limit 1", Array(bookName));
-	}
-
-	public int getSongUpdateTime(final String bookName, final String code) {
-		final SQLiteDatabase db = helper.getReadableDatabase();
-		return (int) DatabaseUtils.longForQuery(db, "select " + Table.SongInfo.updateTime + " from " + Table.SongInfo.tableName() + " where " + Table.SongInfo.bookName + "=? and " + Table.SongInfo.code + "=?", Array(bookName, code));
-	}
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
 }

@@ -6,14 +6,7 @@ import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
-import android.util.Log;
 import android.util.Pair;
-import okhttp3.Call;
-import okhttp3.ResponseBody;
-import yuku.alkitab.base.App;
-import yuku.alkitab.base.util.AppLog;
-import yuku.alkitab.debug.R;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -23,9 +16,16 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import okhttp3.Call;
+import okhttp3.ResponseBody;
+import yuku.alkitab.base.App;
+import yuku.alkitab.base.connection.Connections;
+import yuku.alkitab.base.util.AppLog;
+import yuku.alkitab.base.widget.Localized;
+import yuku.alkitab.debug.R;
 
 public class DownloadService extends Service {
-	public static final String TAG = DownloadService.class.getSimpleName();
+	static final String TAG = DownloadService.class.getSimpleName();
 
 	private static final int MSG_progress = 1;
 	private static final int MSG_stateChanged = 2;
@@ -38,7 +38,7 @@ public class DownloadService extends Service {
 	DownloadListener listener;
 	
 	static class ListenerHandler extends Handler {
-		private WeakReference<DownloadService> sv;
+		private final WeakReference<DownloadService> sv;
 
 		public ListenerHandler(DownloadService sv) {
 			this.sv = new WeakReference<>(sv);
@@ -68,7 +68,7 @@ public class DownloadService extends Service {
 		}
 	}
 
-	private Handler handler = new ListenerHandler(this);
+	private final Handler handler = new ListenerHandler(this);
 	
 	public interface DownloadListener {
 		void onStateChanged(DownloadEntry entry, State originalState);
@@ -80,8 +80,7 @@ public class DownloadService extends Service {
 		downloading,
 		finished,
 		failed,
-		;
-	}
+    }
 	
 	public static class DownloadEntry {
 		public String key;
@@ -167,9 +166,8 @@ public class DownloadService extends Service {
 				FileOutputStream tempOut = new FileOutputStream(entry.tempFile);
 				
 				// download
-				final Call call = App.downloadCall(entry.url);
-				final ResponseBody body = call.execute().body();
-				try {
+				final Call call = Connections.downloadCall(entry.url);
+				try (ResponseBody body = call.execute().body()) {
 					changeState(State.downloading);
 					entry.progress = 0;
 					dispatchProgress(entry);
@@ -186,8 +184,6 @@ public class DownloadService extends Service {
 					}
 					tempOut.close();
 					is.close();
-				} finally {
-					body.close();
 				}
 
 				// move
@@ -195,7 +191,7 @@ public class DownloadService extends Service {
 				boolean renameOk = entry.tempFile.renameTo(entry.completeFile);
 				if (!renameOk) {
 					AppLog.w(TAG, "Failed to rename file from " + entry.tempFile + " to " + entry.completeFile);
-					entry.errorMsg = getString(R.string.dl_failed_to_rename_temporary_file);
+					entry.errorMsg = Localized.string(R.string.dl_failed_to_rename_temporary_file);
 					changeState(State.failed);
 					return entry;
 				}

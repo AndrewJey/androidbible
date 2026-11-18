@@ -2,9 +2,9 @@ package yuku.alkitab.base.fr;
 
 import android.content.Context;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
+import android.util.SparseArray;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,28 +12,24 @@ import android.widget.AutoCompleteTextView;
 import android.widget.Filter;
 import android.widget.Filterable;
 import android.widget.TextView;
-import com.afollestad.materialdialogs.MaterialDialog;
-import gnu.trove.map.TIntObjectMap;
-import gnu.trove.map.hash.TIntObjectHashMap;
-import gnu.trove.set.TIntSet;
-import gnu.trove.set.hash.TIntHashSet;
+import androidx.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import yuku.afw.widget.EasyAdapter;
 import yuku.alkitab.base.S;
 import yuku.alkitab.base.fr.base.BaseGotoFragment;
 import yuku.alkitab.base.util.Jumper;
 import yuku.alkitab.base.util.Levenshtein;
+import yuku.alkitab.base.widget.MaterialDialogJavaHelper;
 import yuku.alkitab.debug.R;
 import yuku.alkitab.model.Book;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 public class GotoDirectFragment extends BaseGotoFragment {
-	public static final String TAG = GotoDirectFragment.class.getSimpleName();
-	
 	private static final String EXTRA_verse = "verse";
 	private static final String EXTRA_chapter = "chapter";
 	private static final String EXTRA_bookId = "bookId";
@@ -150,10 +146,7 @@ public class GotoDirectFragment extends BaseGotoFragment {
 
 			final Jumper jumper = new Jumper(reference);
 			if (! jumper.getParseSucceeded()) {
-				new MaterialDialog.Builder(getActivity())
-					.content(getString(R.string.alamat_tidak_sah_alamat, reference))
-					.positiveText(R.string.ok)
-					.show();
+				MaterialDialogJavaHelper.showOkDialog(requireActivity(), getString(R.string.alamat_tidak_sah_alamat, reference));
 				return;
 			}
 			
@@ -170,7 +163,7 @@ public class GotoDirectFragment extends BaseGotoFragment {
 
 		@Override
 		public View newView(final int position, final ViewGroup parent) {
-			return getActivity().getLayoutInflater().inflate(R.layout.support_simple_spinner_dropdown_item, parent, false);
+			return getActivity().getLayoutInflater().inflate(androidx.appcompat.R.layout.support_simple_spinner_dropdown_item, parent, false);
 		}
 
 		@Override
@@ -197,8 +190,7 @@ public class GotoDirectFragment extends BaseGotoFragment {
 		public Filter getFilter() {
 			return new Filter() {
 				final Book[] books = S.activeVersion().getConsecutiveBooks();
-				final TIntObjectMap<Book> bookIndex = new TIntObjectHashMap<>();
-
+				final SparseArray<Book> bookIndex = new SparseArray<>();
 				{
 					for (final Book book : books) {
 						bookIndex.put(book.bookId, book);
@@ -224,7 +216,7 @@ public class GotoDirectFragment extends BaseGotoFragment {
 					if (bookName != null) {
 						bookName = bookName.trim().toLowerCase();
 						if (bookName.length() >= 1) {
-							final TIntSet addedBookIds = new TIntHashSet();
+							final Set<Integer> addedBookIds = new HashSet<>();
 
 							for (final Book book : books) {
 								String title = null;
@@ -253,12 +245,12 @@ public class GotoDirectFragment extends BaseGotoFragment {
 								}
 
 								for (final Jumper.BookRef bookRef : _bookRefs) {
-									if (addedBookIds.contains(bookRef.bookId)) continue;
+									if (addedBookIds.contains(bookRef.getBookId())) continue;
 
-									final int distance = Levenshtein.distance(bookName, bookRef.condensed);
-									final Book book = bookIndex.get(bookRef.bookId);
+									final int distance = Levenshtein.distance(bookName, bookRef.getCondensed());
+									final Book book = bookIndex.get(bookRef.getBookId());
 									addCandidate(jumper, candidates, book.shortName, -distance, book);
-									addedBookIds.add(bookRef.bookId);
+									addedBookIds.add(bookRef.getBookId());
 								}
 							}
 						}

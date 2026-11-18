@@ -1,7 +1,7 @@
 package yuku.alkitab.model;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import yuku.alkitab.util.Ari;
 import yuku.alkitab.util.IntArrayList;
 
@@ -31,6 +31,7 @@ public abstract class Version {
 	/**
 	 * @return null if bookId is out of range, or the book is not available on this version.
 	 */
+	@Nullable
 	public abstract Book getBook(int bookId);
 	
 	public abstract Book getFirstBook();
@@ -59,16 +60,12 @@ public abstract class Version {
 	 * Loads the list of pericopes for a chapter
 	 * @param aris output parameter; will be filled in with the aris where the pericopes start
 	 * @param pericopeBlocks output parameter; will be filled with the content of the pericopes
-	 * @param max the maximum number of pericopes to return. The output arrays must have at least max entries.
 	 * @return the number of pericopes loaded. 0 if the version does not have pericopes or some errors happen.
 	 */
-	public abstract int loadPericope(int bookId, int chapter_1, int[] aris, PericopeBlock[] pericopeBlocks, int max);
+	public abstract int loadPericope(int bookId, int chapter_1, IntArrayList aris, List<PericopeBlock> pericopeBlocks);
 
 	@Nullable
 	public abstract SingleChapterVerses loadChapterText(Book book, int chapter_1);
-
-	@Nullable
-	public abstract SingleChapterVerses loadChapterTextLowercased(Book book, int chapter_1);
 
 	/**
 	 * Load a whole chapter as a single string with verses separated by '\n' from this version.
@@ -108,7 +105,7 @@ public abstract class Version {
 		if (verse_1 == 0 || verseCount == 1) { // verseCount does not matter
 			return reference(bookId, chapter_1, verse_1);
 		} else {
-			return reference(bookId, chapter_1, verse_1) + "\u2013" /* endash */ + (verse_1 + verseCount - 1);
+			return reference(bookId, chapter_1, verse_1) + "–" /* endash */ + (verse_1 + verseCount - 1);
 		}
 	}
 
@@ -194,7 +191,7 @@ public abstract class Version {
 		}
 
 		// en-dash is only empty if both aris are exactly the same
-		en_dash = ari_start == ari_end ? "" : "\u2013";
+		en_dash = ari_start == ari_end ? "" : "–";
 
 		// How to show verse depending on whether the verse is 0:
 		// start, end, show start as, show end as (0 means verse is 0, 1 means verse is non-0)
@@ -251,7 +248,7 @@ public abstract class Version {
 			final char[] chars = new char[words.length];
 			int cnt = 0;
 			for (int i = 0; i < chars.length; i++) {
-				if (words[i].length() > 0) {
+				if (!words[i].isEmpty()) {
 					chars[cnt++] = Character.toUpperCase(words[i].charAt(0));
 				}
 			}

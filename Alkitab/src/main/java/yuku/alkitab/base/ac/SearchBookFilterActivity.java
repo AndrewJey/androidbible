@@ -5,10 +5,6 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.InsetDrawable;
 import android.os.Bundle;
 import android.os.Parcelable;
-import android.support.v7.app.ActionBar;
-import android.support.v7.widget.GridLayoutManager;
-import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.Toolbar;
 import android.util.SparseBooleanArray;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -16,10 +12,15 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.widget.Toolbar;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import yuku.afw.App;
 import yuku.afw.storage.Preferences;
-import yuku.alkitab.base.U;
 import yuku.alkitab.base.ac.base.BaseActivity;
+import yuku.alkitab.base.util.BookColorUtil;
 import yuku.alkitab.base.util.BookNameSorter;
 import yuku.alkitab.debug.R;
 import yuku.alkitab.model.Book;
@@ -96,6 +97,7 @@ public class SearchBookFilterActivity extends BaseActivity {
 
 		final Toolbar toolbar = findViewById(R.id.toolbar);
 		setSupportActionBar(toolbar);
+		setupEdgeToEdgeDisplay(toolbar);
 		final ActionBar ab = getSupportActionBar();
 		assert ab != null;
 		ab.setDisplayHomeAsUpEnabled(true);
@@ -166,8 +168,9 @@ public class SearchBookFilterActivity extends BaseActivity {
 			return TYPE_BOOK;
 		}
 
+		@NonNull
 		@Override
-		public VH onCreateViewHolder(final ViewGroup parent, final int viewType) {
+		public VH onCreateViewHolder(@NonNull final ViewGroup parent, final int viewType) {
 			if (viewType == TYPE_CATEGORIES) {
 				return new VH(getLayoutInflater().inflate(R.layout.search_book_filter_categories, parent, false), viewType);
 			} else {
@@ -199,7 +202,7 @@ public class SearchBookFilterActivity extends BaseActivity {
 						checkBox.setChecked(all_on);
 					}
 
-					{ // then, put a change listener
+					{ // then, put a change selectedVersesListener
 						checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
 							// all on?
 							boolean all_on = true;
@@ -226,12 +229,12 @@ public class SearchBookFilterActivity extends BaseActivity {
 
 				if (selectedBookIds.get(book.bookId)) {
 					lName.setTextColor(0xffffffff);
-					final ColorDrawable color = new ColorDrawable(U.getBackgroundColorByBookId(book.bookId));
+					final ColorDrawable color = new ColorDrawable(BookColorUtil.getBackground(book.bookId));
 					final InsetDrawable bg = new InsetDrawable(color, getResources().getDimensionPixelOffset(R.dimen.goto_grid_cell_inset));
 					//noinspection deprecation
 					lName.setBackgroundDrawable(bg);
 				} else {
-					lName.setTextColor(U.getForegroundColorOnDarkBackgroundByBookId(book.bookId));
+					lName.setTextColor(BookColorUtil.getForegroundOnDark(book.bookId));
 					lName.setBackgroundColor(0x0);
 				}
 

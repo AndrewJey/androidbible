@@ -1,18 +1,17 @@
 package yuku.alkitab.base.storage;
 
-import android.support.v4.content.ContextCompat;
-import android.support.v4.util.AtomicFile;
-import yuku.alkitab.base.App;
-
+import androidx.core.content.ContextCompat;
+import androidx.core.util.AtomicFile;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import yuku.alkitab.base.App;
 
 public class NoBackupSharedPreferences {
 	final static HashMap<String, NoBackupSharedPreferences> instances = new HashMap<>();
@@ -41,7 +40,7 @@ public class NoBackupSharedPreferences {
 			final AtomicFile atom = new AtomicFile(file);
 			try {
 				final FileInputStream fis = atom.openRead();
-				final Map savedMap = App.getDefaultGson().fromJson(new InputStreamReader(fis, Charset.forName("utf-8")), Map.class);
+				final Map savedMap = App.getDefaultGson().fromJson(new InputStreamReader(fis, StandardCharsets.UTF_8), Map.class);
 				map = savedMap == null ? new Map() : savedMap;
 				fis.close();
 			} catch (IOException e) {
@@ -56,7 +55,7 @@ public class NoBackupSharedPreferences {
 		final AtomicFile atom = new AtomicFile(file);
 		try {
 			final FileOutputStream fos = atom.startWrite();
-			final OutputStreamWriter w = new OutputStreamWriter(fos, Charset.forName("utf-8"));
+			final OutputStreamWriter w = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
 			App.getDefaultGson().toJson(map, w);
 			w.flush();
 			atom.finishWrite(fos);

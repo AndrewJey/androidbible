@@ -5,13 +5,14 @@
 	android:layout_height="match_parent"
 	android:orientation="vertical">
 
-	<android.support.v7.widget.Toolbar
+	<androidx.appcompat.widget.Toolbar
 		android:id="@+id/toolbar"
+		android:theme="@style/ThemeOverlay.Alkitab.Toolbar"
 		android:layout_width="match_parent"
 		android:layout_height="?actionBarSize"
 		android:background="@color/primary" />
 
-	<android.support.v4.widget.NestedScrollView
+	<androidx.core.widget.NestedScrollView
 		android:layout_width="match_parent"
 		android:layout_height="0dp"
 		android:layout_weight="1"
@@ -22,19 +23,18 @@
 		<LinearLayout
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:layout_marginLeft="@dimen/padding_medium"
-			android:layout_marginRight="@dimen/padding_medium"
+			android:layout_marginStart="@dimen/padding_medium"
+			android:layout_marginEnd="@dimen/padding_medium"
 			android:animateLayoutChanges="true"
 			android:orientation="vertical">
-
 
 			<ImageView
 				android:layout_width="wrap_content"
 				android:layout_height="wrap_content"
 				android:layout_gravity="center_horizontal"
 				android:adjustViewBounds="true"
-				android:paddingLeft="@dimen/padding_large"
-				android:paddingRight="@dimen/padding_large"
+				android:paddingStart="@dimen/padding_large"
+				android:paddingEnd="@dimen/padding_large"
 				android:scaleType="fitStart"
 				android:src="@drawable/sync_intro"
 				tools:ignore="ContentDescription" />
@@ -77,8 +77,8 @@
 					android:layout_gravity="end"
 					android:background="@null"
 					android:focusable="false"
-					android:paddingLeft="@dimen/padding_medium"
-					android:paddingRight="@dimen/padding_medium"
+					android:paddingStart="@dimen/padding_medium"
+					android:paddingEnd="@dimen/padding_medium"
 					android:text="@string/sync_login_form_forgot_button"
 					android:textAppearance="?android:textAppearanceSmall" />
 
@@ -132,5 +132,5 @@
 			</LinearLayout>
 		</LinearLayout>
 
-	</android.support.v4.widget.NestedScrollView>
+	</androidx.core.widget.NestedScrollView>
 </LinearLayout>

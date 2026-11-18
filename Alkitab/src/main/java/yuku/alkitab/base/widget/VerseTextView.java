@@ -2,22 +2,17 @@ package yuku.alkitab.base.widget;
 
 import android.content.Context;
 import android.graphics.Rect;
-import android.support.v4.view.MotionEventCompat;
 import android.text.Layout;
 import android.text.Spanned;
 import android.text.style.ClickableSpan;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.MotionEvent;
-import android.widget.TextView;
-import yuku.alkitab.base.util.AppLog;
-import yuku.alkitab.debug.BuildConfig;
-
+import androidx.appcompat.widget.AppCompatTextView;
 import java.util.ArrayList;
 import java.util.List;
 
-public class VerseTextView extends TextView {
-	public static final String TAG = VerseTextView.class.getSimpleName();
+public class VerseTextView extends AppCompatTextView {
+	static final String TAG = VerseTextView.class.getSimpleName();
 
 	static class SpanEntry {
 		public Rect rect = new Rect();
@@ -29,12 +24,7 @@ public class VerseTextView extends TextView {
 		}
 	}
 
-	public static ThreadLocal<List<SpanEntry>> spanEntriesBuffer = new ThreadLocal<List<SpanEntry>>() {
-		@Override
-		protected List<SpanEntry> initialValue() {
-			return new ArrayList<>(8);
-		}
-	};
+	public static final ThreadLocal<List<SpanEntry>> spanEntriesBuffer = ThreadLocal.withInitial(() -> new ArrayList<>(8));
 
 	public VerseTextView(Context context, AttributeSet attrs) {
 		super(context, attrs);
@@ -51,18 +41,16 @@ public class VerseTextView extends TextView {
 	 *    If there is no such entry, make our handling return false to let the touch handled by this view's parent.
 	 */
 	@Override public boolean onTouchEvent(MotionEvent event) {
-		final int action = MotionEventCompat.getActionMasked(event);
+		final int action = event.getActionMasked();
 		if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_DOWN) return false;
 
 		final CharSequence text = this.getText();
-		if (!(text instanceof Spanned)) return false;
+		if (!(text instanceof Spanned buffer)) return false;
 
 		final Layout layout = this.getLayout();
 		if (layout == null) return false;
 
-		final Spanned buffer = (Spanned) text;
-
-		final int touchX = (int) (event.getX() + 0.5f) - this.getTotalPaddingLeft() + this.getScrollX();
+        final int touchX = (int) (event.getX() + 0.5f) - this.getTotalPaddingLeft() + this.getScrollX();
 		final int touchY = (int) (event.getY() + 0.5f) - this.getTotalPaddingTop() + this.getScrollY();
 
 		final List<SpanEntry> spanEntries = spanEntriesBuffer.get();
@@ -98,17 +86,6 @@ public class VerseTextView extends TextView {
 				if (lineEnd - lineStart > 1) {
 					spanEntries_count = addSpanEntry(spanEntries, spanEntries_count, span, 0, bottomStart, layout.getWidth(), topEnd);
 				}
-			}
-		}
-
-		if (BuildConfig.DEBUG) {
-			AppLog.d(TAG, "----------");
-			AppLog.d(TAG, "touchX=" + touchX);
-			AppLog.d(TAG, "touchY=" + touchY);
-
-			for (int i = 0; i < spanEntries_count; i++) {
-				final SpanEntry e = spanEntries.get(i);
-				AppLog.d(TAG, "SpanEntry " + i + " at " + e.rect.toString() + ": span " + e.span + " '" + buffer.subSequence(buffer.getSpanStart(e.span), buffer.getSpanEnd(e.span)) + "'");
 			}
 		}
 
@@ -165,11 +142,6 @@ public class VerseTextView extends TextView {
 		for (int i = 0; i < spanEntries_count; i++) {
 			final SpanEntry spanEntry = spanEntries.get(i);
 			spanEntry.clear(); // don't keep any references to span!
-		}
-
-		if (BuildConfig.DEBUG) {
-			final double dist = Math.sqrt(bestDistanceSquared);
-			AppLog.d(TAG, "Best span is: " + bestSpan + " with distance " + dist + " (" + (dist / density) + "dp)");
 		}
 
 		if (bestSpan != null) {

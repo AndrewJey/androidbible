@@ -1,6 +1,6 @@
 package yuku.alkitab.base.devotion;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 public abstract class ArticleFromSabda extends DevotionArticle {
 	String body;
@@ -31,17 +31,15 @@ public abstract class ArticleFromSabda extends DevotionArticle {
 	@Override
 	public boolean equals(Object o) {
 		if (o == null) return false;
-		if (!(o instanceof ArticleFromSabda)) return false;
+		if (!(o instanceof ArticleFromSabda x)) return false;
 		if (this == o) return true;
-
-		ArticleFromSabda x = (ArticleFromSabda) o;
 
 		return x.date.equals(date) && x.getKind().equals(getKind());
 	}
 
 	@Override
 	public int hashCode() {
-		return date.hashCode() * 31 + getKind().name.hashCode();
+		return date.hashCode() * 31 + getKind().sourceName.hashCode();
 	}
 
 	@Override

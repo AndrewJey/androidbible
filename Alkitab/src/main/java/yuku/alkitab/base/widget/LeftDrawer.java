@@ -1,16 +1,10 @@
 package yuku.alkitab.base.widget;
 
 import android.app.Activity;
-import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.support.v4.content.res.ResourcesCompat;
-import android.support.v4.view.GravityCompat;
-import android.support.v4.widget.DrawerLayout;
-import android.support.v4.widget.NestedScrollView;
-import android.support.v7.widget.SwitchCompat;
+import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;
 import android.text.style.RelativeSizeSpan;
 import android.util.AttributeSet;
@@ -20,31 +14,37 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
-import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.CompoundButton;
-import android.widget.PopupMenu;
 import android.widget.Spinner;
 import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.appcompat.widget.SwitchCompat;
+import androidx.core.content.res.ResourcesCompat;
+import androidx.core.view.GravityCompat;
+import androidx.core.widget.NestedScrollView;
+import androidx.drawerlayout.widget.DrawerLayout;
+import java.util.ArrayList;
+import java.util.List;
 import yuku.afw.storage.Preferences;
 import yuku.afw.widget.EasyAdapter;
 import yuku.alkitab.base.App;
 import yuku.alkitab.base.IsiActivity;
-import yuku.alkitab.base.S;
 import yuku.alkitab.base.ac.AboutActivity;
 import yuku.alkitab.base.ac.DevotionActivity;
 import yuku.alkitab.base.ac.ReadingPlanActivity;
-import yuku.alkitab.base.ac.SettingsActivity;
-import yuku.alkitab.base.ac.SongViewActivity;
 import yuku.alkitab.base.config.AppConfig;
+import yuku.alkitab.base.events.AppEvents;
+import yuku.alkitab.base.settings.SettingsActivity;
 import yuku.alkitab.base.storage.Prefkey;
 import yuku.alkitab.base.util.CurrentReading;
-import yuku.alkitab.base.util.SongBookUtil;
 import yuku.alkitab.debug.R;
-
-import java.util.ArrayList;
-import java.util.List;
+import yuku.alkitab.songs.SongSelectionControls;
+import yuku.alkitab.songs.SongViewActivity;
 
 public abstract class LeftDrawer extends NestedScrollView {
+
+	public static final String PROGRESS_MARK_DRAG_MIME_TYPE = "application/vnd.yuku.alkitab.progress_mark.drag";
 
 	// mandatory
 	TextView bBible;
@@ -58,9 +58,11 @@ public abstract class LeftDrawer extends NestedScrollView {
 	final Activity activity;
 	// for closing drawer
 	DrawerLayout drawerLayout;
+	private int[] contentStartMargins;
 
 	public LeftDrawer(final Context context, final AttributeSet attrs) {
 		super(context, attrs);
+		setClipToPadding(false);
 		activity = isInEditMode() ? null : (Activity) context;
 	}
 
@@ -73,6 +75,13 @@ public abstract class LeftDrawer extends NestedScrollView {
 			getChildAt(i).setDuplicateParentStateEnabled(false);
 		}
 
+		final ViewGroup content = (ViewGroup) getChildAt(0);
+		contentStartMargins = new int[content.getChildCount()];
+		for (int i = 0; i < content.getChildCount(); i++) {
+			final ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) content.getChildAt(i).getLayoutParams();
+			contentStartMargins[i] = params.getMarginStart();
+		}
+
 		bBible = findViewById(R.id.bBible);
 		bDevotion = findViewById(R.id.bDevotion);
 		bReadingPlan = findViewById(R.id.bReadingPlan);
@@ -80,11 +89,10 @@ public abstract class LeftDrawer extends NestedScrollView {
 		bSettings = findViewById(R.id.bSettings);
 		bHelp = findViewById(R.id.bHelp);
 
-		final int selectedTextColor = ResourcesCompat.getColor(getResources(), R.color.accent, getContext().getTheme());
-		if (this instanceof Text) bBible.setTextColor(selectedTextColor);
-		if (this instanceof Devotion) bDevotion.setTextColor(selectedTextColor);
-		if (this instanceof ReadingPlan) bReadingPlan.setTextColor(selectedTextColor);
-		if (this instanceof Songs) bSongs.setTextColor(selectedTextColor);
+		if (this instanceof Text) setDrawerItemSelected(bBible);
+		if (this instanceof Devotion) setDrawerItemSelected(bDevotion);
+		if (this instanceof ReadingPlan) setDrawerItemSelected(bReadingPlan);
+		if (this instanceof Songs) setDrawerItemSelected(bSongs);
 
 		// hide and show according to app config
 		if (!isInEditMode()) {
@@ -123,13 +131,48 @@ public abstract class LeftDrawer extends NestedScrollView {
 		});
 	}
 
+	public void setSafeAreaInsets(final int left, final int top, final int right, final int bottom) {
+		final boolean isRtl = getLayoutDirection() == LAYOUT_DIRECTION_RTL;
+		final int startInset = isRtl ? right : left;
+		final ViewGroup.LayoutParams drawerParams = getLayoutParams();
+		final int width = getResources().getDimensionPixelSize(R.dimen.left_drawer_width) + startInset;
+		if (drawerParams != null && drawerParams.width != width) {
+			drawerParams.width = width;
+			setLayoutParams(drawerParams);
+		}
+
+		setPadding(0, 0, 0, bottom);
+		final View header = (View) bBible.getParent();
+		header.setPadding(isRtl ? 0 : startInset, top, isRtl ? startInset : 0, 0);
+		final View footer = (View) bSettings.getParent();
+		footer.setPadding(isRtl ? 0 : startInset, 0, isRtl ? startInset : 0, 0);
+
+		final ViewGroup content = (ViewGroup) getChildAt(0);
+		for (int i = 0; i < content.getChildCount(); i++) {
+			final View child = content.getChildAt(i);
+			final int id = child.getId();
+			final boolean isDivider = id == R.id.dividerCurrentReading || id == R.id.dividerProgress || id == R.id.dividerDisplay;
+			if (child == header || child == footer || isDivider) continue;
+			final ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) child.getLayoutParams();
+			final int startMargin = contentStartMargins[i] + startInset;
+			if (params.getMarginStart() != startMargin) {
+				params.setMarginStart(startMargin);
+				child.setLayoutParams(params);
+			}
+		}
+	}
+
+	void setDrawerItemSelected(@NonNull TextView drawerItem) {
+		final int selectedTextColor = ResourcesCompat.getColor(getResources(), R.color.accent, getContext().getTheme());
+		drawerItem.setTextColor(selectedTextColor);
+		drawerItem.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+	}
+
 	@Override
 	public boolean onDragEvent(final DragEvent event) {
 		if (event.getAction() == DragEvent.ACTION_DRAG_STARTED) {
-			App.trackEvent("pin_drag_started");
-			if (event.getClipDescription().hasMimeType(VerseItem.PROGRESS_MARK_DRAG_MIME_TYPE)) {
-				return true; // Just to that the progress pin is not dropped to the verses
-			}
+			// Just so that the progress pin is not dropped to the verses
+			return event.getClipDescription().hasMimeType(PROGRESS_MARK_DRAG_MIME_TYPE);
 		}
 		return false;
 	}
@@ -144,6 +187,16 @@ public abstract class LeftDrawer extends NestedScrollView {
 
 	public void closeDrawer() {
 		drawerLayout.closeDrawer(GravityCompat.START);
+	}
+
+	/**
+	 * Turns the edge swipe that opens this drawer on or off. Callers that own a
+	 * competing horizontal drag near the left edge — the split handle parked
+	 * there — switch it off for the duration of their drag, so the touch does
+	 * not also peek the drawer open.
+	 */
+	public void setEdgeSwipeEnabled(boolean enabled) {
+		drawerLayout.setDrawerLockMode(enabled ? DrawerLayout.LOCK_MODE_UNLOCKED : DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
 	}
 
 	void bHelp_click() {
@@ -176,7 +229,7 @@ public abstract class LeftDrawer extends NestedScrollView {
 	 * When the current activity is not {@link yuku.alkitab.base.IsiActivity},
 	 * this clears all activity on this stack,
 	 * starts {@link yuku.alkitab.base.IsiActivity} on the background,
-	 * and then starts {@link yuku.alkitab.base.ac.SongViewActivity}.
+	 * and then starts {@link SongViewActivity}.
 	 */
 	void bSongs_click() {
 		if (getContext() instanceof IsiActivity) {
@@ -236,7 +289,9 @@ public abstract class LeftDrawer extends NestedScrollView {
 
 			void bCurrentReadingClose_click();
 
-			void bCurrentReadingReference_click();
+			void bCurrentReadingReference_click(int rangeIndex);
+
+			void cCurrentReadingComplete_checkedChange(int rangeIndex, boolean checked);
 		}
 
 		public interface Handle {
@@ -260,7 +315,7 @@ public abstract class LeftDrawer extends NestedScrollView {
 
 		View panelCurrentReadingHeader;
 		View bCurrentReadingClose;
-		TextView bCurrentReadingReference;
+		ViewGroup panelCurrentReadingRows;
 
 		Listener listener;
 		Handle handle = new Handle() {
@@ -306,7 +361,7 @@ public abstract class LeftDrawer extends NestedScrollView {
 
 			panelCurrentReadingHeader = findViewById(R.id.panelCurrentReadingHeader);
 			bCurrentReadingClose = findViewById(R.id.bCurrentReadingClose);
-			bCurrentReadingReference = findViewById(R.id.bCurrentReadingReference);
+			panelCurrentReadingRows = findViewById(R.id.panelCurrentReadingRows);
 
 			cNightMode.setChecked(!isInEditMode() && Preferences.getBoolean(Prefkey.is_night_mode, false));
 
@@ -321,12 +376,12 @@ public abstract class LeftDrawer extends NestedScrollView {
 					closeDrawer();
 				});
 				b.setOnLongClickListener(v -> {
-					final ClipData dragData = new ClipData("progress_mark", new String[]{VerseItem.PROGRESS_MARK_DRAG_MIME_TYPE}, new ClipData.Item("" + preset_id));
+					final ClipData dragData = new ClipData("progress_mark", new String[]{PROGRESS_MARK_DRAG_MIME_TYPE}, new ClipData.Item("" + preset_id));
 					b.setPressed(false);
 					final DragShadowBuilder dragShadowBuilder = new DragShadowBuilder(b);
 					performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
 					closeDrawer();
-					v.startDrag(dragData, dragShadowBuilder, null, 0);
+					v.startDragAndDrop(dragData, dragShadowBuilder, null, 0);
 
 					return true;
 				});
@@ -349,65 +404,76 @@ public abstract class LeftDrawer extends NestedScrollView {
 			cSplitVersion.setOnCheckedChangeListener(cSplitVersion_checkedChange);
 
 			bCurrentReadingClose.setOnClickListener(v -> listener.bCurrentReadingClose_click());
-			bCurrentReadingReference.setOnClickListener(v -> listener.bCurrentReadingReference_click());
 
 			displayCurrentReading();
 
-			// The following is not in onAttachedFromWindow, because we need to listen to
-			// ACTION_ACTIVE_VERSION_CHANGED as early as possible, so we do not end up with
-			// a verse reference from a version that was not actually selected during app startup.
-			final IntentFilter filter = new IntentFilter();
-			filter.addAction(CurrentReading.ACTION_CURRENT_READING_CHANGED);
-			filter.addAction(IsiActivity.ACTION_ACTIVE_VERSION_CHANGED);
-			App.getLbm().registerReceiver(currentReadingChangeReceiver, filter);
+			// Not in onAttachedToWindow: we need to listen to activeVersionChanged as early
+			// as possible so we do not end up with a verse reference from a version that
+			// was not actually selected during app startup.
+			AppEvents.observeOnView(this, AppEvents.currentReadingChanged, this::displayCurrentReading);
+			AppEvents.observeOnView(this, AppEvents.activeVersionChanged, this::displayCurrentReading);
+			AppEvents.observeOnView(this, AppEvents.readingPlanProgressChanged, this::displayCurrentReading);
 		}
 
 		@Override
-		protected void onDetachedFromWindow() {
-			super.onDetachedFromWindow();
-
-			App.getLbm().unregisterReceiver(currentReadingChangeReceiver);
+		public void onAttachedToWindow() {
+			super.onAttachedToWindow();
+			displayCurrentReading();
 		}
 
-		final BroadcastReceiver currentReadingChangeReceiver = new BroadcastReceiver() {
-			@Override
-			public void onReceive(final Context context, final Intent intent) {
-				displayCurrentReading();
-			}
-		};
-
-		void displayCurrentReading() {
+		public void displayCurrentReading() {
 			if (isInEditMode()) return;
 
-			final int[] aris = CurrentReading.get();
+			final int[] aris = CurrentReading.getRanges();
+			final int rowCount = aris == null ? 0 : aris.length / 2;
+			findViewById(R.id.dividerCurrentReading).setVisibility(rowCount == 0 ? GONE : VISIBLE);
+			panelCurrentReadingHeader.setVisibility(rowCount == 0 ? GONE : VISIBLE);
+			panelCurrentReadingRows.setVisibility(rowCount == 0 ? GONE : VISIBLE);
+			while (panelCurrentReadingRows.getChildCount() > rowCount) {
+				panelCurrentReadingRows.removeViewAt(panelCurrentReadingRows.getChildCount() - 1);
+			}
+			while (panelCurrentReadingRows.getChildCount() < rowCount) {
+				LayoutInflater.from(getContext()).inflate(R.layout.item_current_reading, panelCurrentReadingRows, true);
+			}
 			if (aris == null) {
-				panelCurrentReadingHeader.setVisibility(GONE);
-				bCurrentReadingReference.setVisibility(GONE);
-			} else {
-				panelCurrentReadingHeader.setVisibility(VISIBLE);
-				bCurrentReadingReference.setVisibility(VISIBLE);
-
-				bCurrentReadingReference.setText(S.activeVersion().referenceRange(aris[0], aris[1]));
+				return;
+			}
+			final boolean[] completed = CurrentReading.getPlanCompletions();
+			for (int index = 0; index < rowCount; index++) {
+				final int rangeIndex = index;
+				final View row = panelCurrentReadingRows.getChildAt(index);
+				final TextView reference = row.findViewById(R.id.bCurrentReadingReference);
+				final CheckBox checkbox = row.findViewById(R.id.cCurrentReadingComplete);
+				reference.setText(CurrentReading.reference(App.services.versions.activeVersion(), rangeIndex));
+				reference.setOnClickListener(v -> listener.bCurrentReadingReference_click(rangeIndex));
+				checkbox.setOnCheckedChangeListener(null);
+				checkbox.setVisibility(completed != null ? VISIBLE : GONE);
+				checkbox.setChecked(completed != null && completed[index]);
+				checkbox.setContentDescription(getContext().getString(R.string.current_reading_completed) + ": " + reference.getText());
+				checkbox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+					listener.cCurrentReadingComplete_checkedChange(rangeIndex, isChecked);
+					displayCurrentReading();
+				});
 			}
 		}
 
 		CompoundButton.OnCheckedChangeListener cFullScreen_checkedChange = new CompoundButton.OnCheckedChangeListener() {
 			@Override
-			public void onCheckedChanged(final CompoundButton buttonView, final boolean isChecked) {
+			public void onCheckedChanged(@NonNull final CompoundButton buttonView, final boolean isChecked) {
 				listener.cFullScreen_checkedChange(isChecked);
 			}
 		};
 
 		CompoundButton.OnCheckedChangeListener cNightMode_checkedChange = new CompoundButton.OnCheckedChangeListener() {
 			@Override
-			public void onCheckedChanged(final CompoundButton buttonView, final boolean isChecked) {
+			public void onCheckedChanged(@NonNull final CompoundButton buttonView, final boolean isChecked) {
 				listener.cNightMode_checkedChange(isChecked);
 			}
 		};
 
 		CompoundButton.OnCheckedChangeListener cSplitVersion_checkedChange = new CompoundButton.OnCheckedChangeListener() {
 			@Override
-			public void onCheckedChanged(final CompoundButton buttonView, final boolean isChecked) {
+			public void onCheckedChanged(@NonNull final CompoundButton buttonView, final boolean isChecked) {
 				listener.cSplitVersion_checkedChange(cSplitVersion, isChecked);
 				closeDrawer();
 			}
@@ -569,28 +635,20 @@ public abstract class LeftDrawer extends NestedScrollView {
 	}
 
 	public static class ReadingPlan extends LeftDrawer {
-		public interface Listener {
-			void bRestart_click();
-		}
-
 		public interface Handle {
 			void setDescription(CharSequence description);
 		}
 
 		NestedScrollView scrollDescription;
 		TextView tDescription;
-		View bRestart;
 
-		Listener listener;
 		Handle handle = new Handle() {
 			@Override
 			public void setDescription(final CharSequence description) {
 				if (description == null) {
-					bRestart.setVisibility(GONE);
 					scrollDescription.setVisibility(GONE);
 					tDescription.setText("");
 				} else {
-					bRestart.setVisibility(VISIBLE);
 					scrollDescription.setVisibility(VISIBLE);
 					tDescription.setText(description);
 				}
@@ -611,9 +669,6 @@ public abstract class LeftDrawer extends NestedScrollView {
 
 			scrollDescription = findViewById(R.id.scrollDescription);
 			tDescription = findViewById(R.id.tDescription);
-			bRestart = findViewById(R.id.bRestart);
-
-			bRestart.setOnClickListener(v -> listener.bRestart_click());
 		}
 
 		@Override
@@ -621,8 +676,7 @@ public abstract class LeftDrawer extends NestedScrollView {
 			closeDrawer();
 		}
 
-		public <T extends Activity & Listener> void configure(T listener, DrawerLayout drawerLayout) {
-			this.listener = listener;
+		public void configure(DrawerLayout drawerLayout) {
 			this.drawerLayout = drawerLayout;
 		}
 	}
@@ -651,111 +705,25 @@ public abstract class LeftDrawer extends NestedScrollView {
 		}
 
 		Listener listener;
-		Handle handle = new Handle() {
-			@Override
-			public void setOkButtonEnabled(boolean enabled) {
-				bOk.setEnabled(enabled);
-			}
-
-			@Override
-			public void setAButtonEnabled(boolean enabled) {
-				bDigitA.setEnabled(enabled);
-			}
-
-			@Override
-			public void setBButtonEnabled(boolean enabled) {
-				bDigitB.setEnabled(enabled);
-			}
-
-			@Override
-			public void setCButtonEnabled(boolean enabled) {
-				bDigitC.setEnabled(enabled);
-			}
-
-			@Override
-			public void setBookName(final CharSequence bookName) {
-				bChangeBook.setText(bookName);
-			}
-
-			@Override
-			public void setCode(final String code) {
-				bChangeCode.setText(code);
-			}
-
-		};
+		private SongSelectionControls controls;
 
 		public Songs(final Context context, final AttributeSet attrs) {
 			super(context, attrs);
 		}
 
-		TextView bChangeBook;
-		TextView bChangeCode;
-
-		Button bOk;
-		Button bDigitA;
-		Button bDigitB;
-		Button bDigitC;
-
 		public Handle getHandle() {
-			return handle;
+			return controls;
 		}
 
 		@Override
 		protected void onFinishInflate() {
 			super.onFinishInflate();
-
-			bChangeBook = findViewById(R.id.bChangeBook);
-			bChangeCode = findViewById(R.id.bChangeCode);
-
-			bOk = findViewById(R.id.bOk);
-			bDigitA = findViewById(R.id.bDigitA);
-			bDigitB = findViewById(R.id.bDigitB);
-			bDigitC = findViewById(R.id.bDigitC);
-
-			bChangeBook.setOnClickListener(v -> {
-				final PopupMenu popupChangeBook = SongBookUtil.getSongBookPopupMenu(activity, false, true, bChangeBook);
-				popupChangeBook.setOnMenuItemClickListener(SongBookUtil.getSongBookOnMenuItemClickListener(new SongBookUtil.DefaultOnSongBookSelectedListener() {
-					@Override
-					public void onSongBookSelected(final String name) {
-						listener.songBookSelected(name);
-					}
-
-					@Override
-					public void onMoreSelected() {
-						listener.moreSelected();
-					}
-				}));
-
-				popupChangeBook.show();
+			controls = new SongSelectionControls(activity, this, new Listener() {
+				@Override public void songKeypadButton_click(View v) { listener.songKeypadButton_click(v); }
+				@Override public void songBookSelected(String name) { listener.songBookSelected(name); }
+				@Override public void moreSelected() { listener.moreSelected(); }
 			});
-
-			// all buttons
-			for (int buttonId : new int[]{
-				R.id.bDigit0,
-				R.id.bDigit1,
-				R.id.bDigit2,
-				R.id.bDigit3,
-				R.id.bDigit4,
-				R.id.bDigit5,
-				R.id.bDigit6,
-				R.id.bDigit7,
-				R.id.bDigit8,
-				R.id.bDigit9,
-				R.id.bDigitA,
-				R.id.bDigitB,
-				R.id.bDigitC,
-				R.id.bOk,
-				R.id.bBackspace,
-			}) {
-				findViewById(buttonId).setOnClickListener(button_click);
-			}
 		}
-
-		final OnClickListener button_click = v -> {
-			if (listener != null) {
-				listener.songKeypadButton_click(v);
-			}
-		};
 
 		@Override
 		void bSongs_click() {

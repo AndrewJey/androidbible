@@ -51,4 +51,32 @@ class VersionDownloadCompleteReceiverTest {
         VersionDownloadCompleteReceiver.finalizeDownload(source, destination)
         assertEquals("compressed version", destination.readText())
     }
+    @Test
+    fun `a failed replacement preserves the destination and removes staging files`() {
+        val source = folder.newFile("source").apply { writeText("new version") }
+        val destination = folder.newFolder("destination")
+        val retained = File(destination, "retained").apply { writeText("keep") }
+        assertThrows(IOException::class.java) {
+            VersionDownloadCompleteReceiver.finalizeDownload(source, destination)
+        }
+        assertEquals("keep", retained.readText())
+        assertFalse(folder.root.listFiles().orEmpty().any { it.name.startsWith("download-") })
+    }
+
+    @Test
+    fun `a download can replace its own source after reading completes`() {
+        val source = folder.newFile("same").apply { writeText("same file") }
+        VersionDownloadCompleteReceiver.finalizeDownload(source, source)
+        assertEquals("same file", source.readText())
+    }
+
+    @Test
+    fun `a missing destination directory is created without leaving staging files`() {
+        val source = folder.newFile("source").apply { writeText("new version") }
+        val destination = File(folder.root, "nested/version")
+        VersionDownloadCompleteReceiver.finalizeDownload(source, destination)
+        assertEquals("new version", destination.readText())
+        assertFalse(destination.parentFile.listFiles().orEmpty().any { it.name.startsWith("download-") })
+    }
+
 }

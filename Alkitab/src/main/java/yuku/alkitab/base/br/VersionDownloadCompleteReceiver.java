@@ -5,11 +5,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.text.TextUtils;
 import android.widget.Toast;
-import androidx.core.util.AtomicFile;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import yuku.alkitab.base.App;
 import yuku.alkitab.base.ac.AlertDialogActivity;
@@ -148,22 +151,29 @@ public class VersionDownloadCompleteReceiver {
 		});
 	}
 	static void finalizeDownload(File source, File destination) throws IOException {
-		final AtomicFile af = new AtomicFile(destination);
-		final FileOutputStream fos = af.startWrite();
-		try {
-			try (FileInputStream fis = new FileInputStream(source);
-				 OptionalGzipInputStream ogis = new OptionalGzipInputStream(fis)) {
-				final byte[] buf = new byte[4096];
-				int read;
-				while ((read = ogis.read(buf)) != -1) {
-					fos.write(buf, 0, read);
-				}
-			}
-			af.finishWrite(fos);
-		} catch (IOException | RuntimeException | Error e) {
-			af.failWrite(fos);
-			throw e;
-		}
-	}
+        final Path target = destination.toPath().toAbsolutePath();
+        Files.createDirectories(target.getParent());
+        final Path pending = Files.createTempFile(target.getParent(), "download-" + destination.getName() + "-", ".new");
+        try {
+            try (FileInputStream fis = new FileInputStream(source);
+                 OptionalGzipInputStream input = new OptionalGzipInputStream(fis);
+                 FileOutputStream output = new FileOutputStream(pending.toFile())) {
+                final byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, count);
+                }
+                output.getFD().sync();
+            }
+            // A sibling staging file permits a complete replacement on the same filesystem.
+            try {
+                Files.move(pending, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(pending, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(pending);
+        }
+    }
 
 }

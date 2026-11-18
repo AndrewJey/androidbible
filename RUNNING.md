@@ -26,4 +26,6 @@ Las instrucciones completas del original están en [docs/build-environment.md](d
 
 Los archivos de `Alkitab/src/plain/assets/internal/` contienen índices de bytes. `.gitattributes` conserva sus bytes originales, incluidos los archivos con extensión `.txt`; convertirlos a CRLF rompe la lectura de capítulos. No los reformatees con un editor. Las pruebas usan SQLite nativo para evitar conexiones simuladas inválidas del modo antiguo en Windows.
 
-La suite JVM en Windows conserva un fallo en `VersionDownloadCompleteReceiverTest` al reemplazar un archivo mediante `AtomicFile`. No se deshabilitó esa prueba. Se comprobó además el método real de la APK en Android: reemplazo de archivo plano, gzip y recuperación ante tres intentos con gzip dañado funcionaron, conservando el archivo anterior y eliminando la escritura pendiente. Ese resultado del dispositivo debe distinguirse del resultado del simulador JVM en Windows.
+## Descargas y sustitución de archivos
+
+La finalización de descargas valida y sincroniza una copia temporal situada junto al destino antes de reemplazar el archivo existente. Un error de lectura, gzip o sustitución conserva el archivo anterior y limpia los temporales. Las pruebas cubren también destinos sin directorio y la sustitución del propio archivo de origen. Se comprueba este comportamiento tanto en la JVM de Windows como en Android.

@@ -14,13 +14,13 @@ def processverse(book_1, chapter_1, verse_1, verse):
 
 	text = re.sub(r'\s+', ' ', text)
 	text = text.strip()
-	print "verse\t%s\t%s\t%s\t%s" % (book_1, chapter_1, verse_1, text)
+	print("verse\t%s\t%s\t%s\t%s" % (book_1, chapter_1, verse_1, text))
 
 
 info = root.find('INFORMATION')
-print "info\tshortName\t%s" % (info.find('identifier').text,)
-print "info\tlongName\t%s" % (info.find('title').text,)
-print "info\tdescription\t%s" % (info.find('description').text,)
+print("info\tshortName\t%s" % (info.find('identifier').text,))
+print("info\tlongName\t%s" % (info.find('title').text,))
+print("info\tdescription\t%s" % (info.find('description').text,))
 
 for book in root.iter('BIBLEBOOK'):
 	book_1 = int(book.attrib['bnumber'])
@@ -29,3 +29,4 @@ for book in root.iter('BIBLEBOOK'):
 		for verse in chapter.iter('VERS'):
 			verse_1 = int(verse.attrib['vnumber'])
 			processverse(book_1, chapter_1, verse_1, verse)
+

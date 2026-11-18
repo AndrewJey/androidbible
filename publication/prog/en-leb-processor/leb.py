@@ -19,7 +19,7 @@ def proc(t, note = False, supplied = False):
 	if verse_1 != 0:
 		exitafterthis = False
 
-		print verse_1
+		print(verse_1)
 		if str(verse_1).startswith(('Ob ', '2 Jn ', '3 Jn ', 'Jud ', 'Phm ')):
 			m = re.match(r'.*\s+(\d+)', verse_1)
 			if m is None:
@@ -230,7 +230,8 @@ import codecs
 f = codecs.open('/tmp/out.yet', mode='w', encoding='utf-8')
 
 for ft in fulltext:
-	print ft
+	print(ft)
 	f.write(ft)
 
 f.close()
+
